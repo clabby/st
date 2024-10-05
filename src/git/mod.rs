@@ -15,9 +15,19 @@ pub fn active_repository() -> Option<Repository> {
 /// repository management.
 pub trait RepositoryExt {
     /// Returns the name of the current branch.
+    ///
+    /// ## Returns
+    /// - `Result<String>` - The name of the current branch, or an error.
     fn current_branch(&self) -> Result<String>;
 
     /// Checks out a branch with the given `branch_name`.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to checkout.
+    /// - `opts` - The checkout options to use.
+    ///
+    /// ## Returns
+    /// - `Result<()>` - The result of the operation.
     fn checkout_branch(
         &self,
         branch_name: &str,

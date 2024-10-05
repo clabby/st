@@ -54,6 +54,7 @@ impl Cli {
                     Blue.paint("st")
                 );
 
+                // Ask the user to specify the trunk branch of the repository.
                 let branches = repo
                     .branches(Some(BranchType::Local))?
                     .into_iter()
@@ -66,8 +67,16 @@ impl Cli {
                     .collect::<Result<Vec<_>>>()?;
                 let trunk_branch = Select::new(&setup_message, branches).prompt()?;
 
+                // Create a new store with the trunk branch specified.
                 let new_state = StoreWithRepository::new(&repo, trunk_branch);
                 new_state.write()?;
+
+                // Print the welcome message.
+                println!(
+                    "\nSuccessfully set up repository with `{}`. Happy stacking 🌈\n",
+                    Blue.paint("st")
+                );
+
                 Ok(new_state)
             }
         }

@@ -1,13 +1,19 @@
 //! The data store for `st` configuration and stack state.
 
-use crate::constants::{
-    BOTTOM_LEFT_BOX, COLORS, EMPTY_CIRCLE, FILLED_CIRCLE, HORIZONTAL_BOX, LEFT_FORK_BOX,
-    ST_STORE_FILE_NAME, VERTICAL_BOX,
+use crate::{
+    constants::{
+        BOTTOM_LEFT_BOX, COLORS, EMPTY_CIRCLE, FILLED_CIRCLE, HORIZONTAL_BOX, LEFT_FORK_BOX,
+        ST_STORE_FILE_NAME, VERTICAL_BOX,
+    },
+    git::RepositoryExt,
 };
 use anyhow::{anyhow, Result};
 use git2::Repository;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Write, path::PathBuf};
+use std::{
+    fmt::{Display, Write},
+    path::PathBuf,
+};
 
 /// The data store for `st` configuration, with its associated [Repository]
 pub struct StoreWithRepository<'a> {
@@ -54,6 +60,41 @@ impl<'a> StoreWithRepository<'a> {
         std::fs::write(store_path, store)?;
         Ok(())
     }
+
+    /// Returns the current stack node, if the current branch exists within a tracked stack.
+    pub fn current_stack_node(&mut self) -> Option<&mut StackNode> {
+        let current_branch_name = self.repository.current_branch().ok()?;
+        self.stacks.find_branch(current_branch_name.as_str())
+    }
+
+    /// Returns a vector of [DisplayBranch]es for the stack node and its children.
+    ///
+    /// ## Returns
+    /// - `Ok(Vec<DisplayBranch>)` - The branches of the stack node and its children,
+    ///                              in the order they are logged.
+    /// - `Err(_)` - If an error occurs while gathering the [DisplayBranch]es.
+    pub fn display_branches(&self) -> Result<Vec<DisplayBranch>> {
+        let mut branches = Vec::default();
+        self.stacks.fill_branches(&mut branches);
+
+        // Write the log of the stacks.
+        let mut buf = String::new();
+        self.stacks
+            .write_log_short(&mut buf, Some(self.repository.current_branch()?.as_str()))?;
+
+        // Zip the log with the branch names.
+        let items = buf
+            .lines()
+            .filter(|l| !l.is_empty())
+            .zip(branches.iter())
+            .map(|(line, branch_name)| DisplayBranch {
+                line: line.to_string(),
+                branch_name: branch_name.to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        Ok(items)
+    }
 }
 
 /// A [StackNode] represents a branch within a stack, optionally with children.
@@ -66,6 +107,55 @@ pub struct StackNode {
 }
 
 impl StackNode {
+    /// Creates a new [StackNode] with the given branch name and no children.
+    pub fn new(branch: String) -> Self {
+        Self {
+            branch,
+            children: Vec::default(),
+        }
+    }
+
+    /// Attempts to find a branch within the stack node and its children.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to find.
+    ///
+    /// ## Returns
+    /// - `Some(&mut StackNode)` - The stack node with the branch name.
+    /// - `None` - If the branch name is not found within the stack node or its children.
+    pub fn find_branch(&mut self, branch_name: &str) -> Option<&mut StackNode> {
+        if self.branch == branch_name {
+            return Some(self);
+        }
+
+        self.children
+            .iter_mut()
+            .find_map(|child| child.find_branch(branch_name))
+    }
+
+    /// Recursively searches for a [StackNode] with the branch name specified and prunes
+    /// it and any of its children.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to delete.
+    ///
+    /// ## Returns
+    /// - `Some(StackNode)` - The deleted stack node.
+    /// - `None` - If the branch name is not found within the stack node or its children.
+    pub fn delete_stack_node(&mut self, branch_name: &str) -> Option<StackNode> {
+        if let Some(index) = self
+            .children
+            .iter()
+            .position(|child| child.branch == branch_name)
+        {
+            return Some(self.children.remove(index));
+        }
+
+        self.children
+            .iter_mut()
+            .find_map(|child| child.delete_stack_node(branch_name))
+    }
+
     /// Prints the stack node and its children for the termnal, in short-form.
     ///
     /// ## Takes
@@ -84,13 +174,6 @@ impl StackNode {
             Default::default(),
             Default::default(),
         )
-    }
-
-    /// Returns a vector with the branch of the [StackNode] and its children.
-    pub fn branches(&self) -> Vec<String> {
-        let mut branches = Vec::default();
-        self.fill_branches(&mut branches);
-        branches
     }
 
     /// Recursively logs the stack node and its children for the terminal, in short-form.
@@ -159,6 +242,18 @@ impl StackNode {
         self.children
             .iter()
             .for_each(|child| child.fill_branches(branches))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct DisplayBranch {
+    pub(crate) line: String,
+    pub(crate) branch_name: String,
+}
+
+impl Display for DisplayBranch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.line)
     }
 }
 

@@ -1,9 +1,11 @@
 //! `create` subcommand.
 
-use crate::{git::RepositoryExt, store::StoreWithRepository};
+use crate::{
+    git::RepositoryExt,
+    store::{StackNode, StoreWithRepository},
+};
 use anyhow::{anyhow, Result};
 use clap::Args;
-use git2::{Config, Signature};
 use nu_ansi_term::Color::Blue;
 
 /// CLI arguments for the `create` subcommand.
@@ -12,29 +14,30 @@ pub struct CreateArgs;
 
 impl CreateArgs {
     /// Run the `create` subcommand.
-    pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
-        let StoreWithRepository { repository, .. } = store;
-
-        let head = repository.head()?;
+    pub fn run(self, mut store: StoreWithRepository<'_>) -> Result<()> {
+        let head = store.repository.head()?;
         let head_name = head.name().ok_or(anyhow!("Name of head not found"))?;
         let head_commit = head.peel_to_commit()?;
-
-        // FLOW:
-        // 1. If the current branch is tracked, create a new branch on top of the current stack.
-        // 2. If the current branch is not tracked, error.
-        // TODO: Do above.
-        if !head.is_branch() {
-            return Err(anyhow!("Cannot create a stack on a detached HEAD."));
-        } else if head.is_remote() {
-            return Err(anyhow!("Cannot create a stack on top of a remote branch."));
-        }
 
         // Prompt the user for the name of their new branch.
         let branch_name = inquire::Text::new("Name of new branch:").prompt()?;
 
+        // Write the new branch to the store in-memory.
+        let stack_node = store
+            .current_stack_node()
+            .ok_or(anyhow!("Not currently on a branch within a tracked stack."))?;
+        stack_node
+            .children
+            .push(StackNode::new(branch_name.clone()));
+
         // Create the new branch and check it out.
-        repository.branch(&branch_name, &head_commit, false)?;
-        repository.checkout_branch(branch_name.as_str(), None)?;
+        store.repository.branch(&branch_name, &head_commit, false)?;
+        store
+            .repository
+            .checkout_branch(branch_name.as_str(), None)?;
+
+        // Update the store on disk.
+        store.write()?;
 
         // Inform user of success.
         println!(
@@ -42,47 +45,6 @@ impl CreateArgs {
             Blue.paint(branch_name),
             Blue.paint(head_name)
         );
-
-        let commit_staged = inquire::Confirm::new("Commit staged? [y/n]").prompt()?;
-        if commit_staged {
-            // Grab the index.
-            let mut index = repository.index()?;
-
-            // Fetch the write tree.
-            let tree_id = index.write_tree()?;
-            let tree = repository.find_tree(tree_id)?;
-
-            // Fetch the git config
-            let config = Config::open_default()?;
-
-            // Craft the signature for the commit.
-            let signature = Signature::now(
-                config.get_string("user.name")?.as_str(),
-                config.get_string("user.email")?.as_str(),
-            )?;
-
-            // Gather the commit message and description.
-            let message = inquire::Text::new("Commit message:").prompt()?;
-            let description = inquire::Editor::new("Commit description")
-                .with_file_extension(".md")
-                .prompt()?;
-
-            // Commit the staged items.
-            let oid = repository.commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                format!("{}\n\n{}", message, description).as_str(),
-                &tree,
-                &[&head_commit],
-            )?;
-
-            println!(
-                "Successfully committed staged changes. Commit oid: `{}`",
-                Blue.paint(oid.to_string())
-            )
-        }
-
         Ok(())
     }
 }
