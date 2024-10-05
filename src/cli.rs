@@ -1,38 +1,61 @@
 //! The CLI for `st`.
 
-use crate::{store::StoreWithRepository, subcommands::Subcommands};
+use crate::{git::active_repository, store::StoreWithRepository, subcommands::Subcommands};
 use anyhow::{anyhow, Result};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
     ArgAction, Parser,
 };
-use git2::BranchType;
+use git2::{BranchType, Repository};
 use inquire::Select;
+use nu_ansi_term::Color::Blue;
 use tracing::Level;
 
-const ABOUT: &str = "st is a CLI application for making stacked PRs easy to work with.";
+const ABOUT: &str = "st is a CLI application for working with stacked PRs locally and on GitHub.";
 
 /// The CLI application for `st`.
 #[derive(Parser, Debug, Clone, Eq, PartialEq)]
-#[command(about = ABOUT, version, styles = cli_styles())]
+#[command(about = ABOUT, version, styles = cli_styles(), arg_required_else_help(true))]
 pub struct Cli {
     /// Verbosity level (0-4)
     #[arg(short, action = ArgAction::Count)]
     pub v: u8,
     /// The subcommand to run
     #[clap(subcommand)]
-    pub subcommand: Option<Subcommands>,
+    pub subcommand: Subcommands,
 }
 
 impl Cli {
     /// Run the CLI application with the given arguments.
     pub async fn run(self) -> Result<()> {
-        let repo =
-            crate::git::active_repository().ok_or_else(|| anyhow!("Not in a git repository."))?;
-        let state = match StoreWithRepository::try_load(&repo) {
-            Ok(store) => store,
-            Err(_) => {
-                const SELECT_TRUNK: &str = "Repo not configured with `st`. Select the trunk branch for the repository.";
+        // Load the active repository.
+        let repo = active_repository()
+            .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
+        let store = Self::try_load_store(&repo)?;
+
+        self.subcommand.run(store).await
+    }
+
+    /// Loads the [StoreWithRepository] for the given [Repository]. If the store does not exist,
+    /// prompts the user to set up the repository with `st`.
+    ///
+    /// ## Takes
+    /// - `repo` - The repository to load the store for.
+    ///
+    /// ## Returns
+    /// - `Result<StoreWithRepository>` - The store for the repository.
+    pub(crate) fn try_load_store<'a>(repo: &'a Repository) -> Result<StoreWithRepository> {
+        // Attempt to load the repository store, or create a new one if it doesn't exist.
+        let store = StoreWithRepository::try_load(&repo)?;
+        match store {
+            Some(store) => Ok(store),
+            None => {
+                let setup_message = format!(
+                    "Repo not configured with `{}`. Select the trunk branch for the repository.",
+                    Blue.paint("st")
+                );
+
+                // Ask the user to specify the trunk branch of the repository.
                 let branches = repo
                     .branches(Some(BranchType::Local))?
                     .into_iter()
@@ -43,20 +66,26 @@ impl Cli {
                             .ok_or(anyhow!("Branch name invalid."))
                     })
                     .collect::<Result<Vec<_>>>()?;
-                dbg!(&branches);
+                let trunk_branch = Select::new(&setup_message, branches).prompt()?;
 
-                let trunk_branch = Select::new(SELECT_TRUNK, branches).prompt()?;
+                // Create a new store with the trunk branch specified.
+                let new_state = StoreWithRepository::new(&repo, trunk_branch);
+                new_state.write()?;
 
-                todo!()
+                // Print the welcome message.
+                println!(
+                    "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
+                    Blue.paint("st")
+                );
+
+                Ok(new_state)
             }
-        };
-
-        Ok(())
+        }
     }
 
     /// Initializes the tracing subscriber
     ///
-    /// # Returns
+    /// ## Returns
     /// - `Result<()>` - Ok if successful, Err otherwise.
     pub(crate) fn init_tracing_subscriber(self) -> Result<Self> {
         let subscriber = tracing_subscriber::fmt()
