@@ -14,13 +14,30 @@ pub struct StoreWithRepository<'a> {
 }
 
 impl<'a> StoreWithRepository<'a> {
+    /// Creates a new [StoreWithRepository] with the given trunk branch and repository.
+    pub fn new(trunk: String, repository: &'a Repository) -> Self {
+        Self {
+            repository,
+            store: Store {
+                trunk,
+                stacks: vec![],
+            },
+        }
+    }
+
     /// Loads the [Store] for the given [Repository].
-    pub fn try_load(repository: &'a Repository) -> Result<Self> {
+    pub fn try_load(repository: &'a Repository) -> Result<Option<Self>> {
         let store_path = store_path(&repository).ok_or(anyhow!("Store path not found"))?;
+
+        // If the store doesn't exist, return None.
+        if !store_path.exists() {
+            return Ok(None);
+        }
+
         let ser_store = std::fs::read_to_string(store_path)?;
         let store: Store = toml::from_str(&ser_store)?;
 
-        Ok(Self { repository, store })
+        Ok(Some(Self { repository, store }))
     }
 
     /// Writes the [Store] to the given [Repository].

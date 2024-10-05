@@ -1,18 +1,25 @@
 //! The subcommands for the `st` application.
 
-use anyhow::Result;
+use crate::store::StoreWithRepository;
 use clap::Subcommand;
-use git2::Repository;
+use stack::CreateArgs;
 
 mod log;
 mod navigate;
 mod remote;
 mod stack;
 
-pub type SubcommandDispatcher<T> = fn(Repository, T) -> Result<()>;
-
 #[derive(Debug, Clone, Eq, PartialEq, Subcommand)]
 pub enum Subcommands {
-    /// Initialize the repository for use with `st`.
-    Init,
+    /// Create a new branch within the current stack. If the stack does not exist, the branch will be created as a new stack on top of the trunk branch.
+    Create(CreateArgs),
+}
+
+impl Subcommands {
+    /// Run the subcommand with the given store.
+    pub async fn run(self, store: StoreWithRepository<'_>) -> anyhow::Result<()> {
+        match self {
+            Self::Create(args) => args.run(store).await,
+        }
+    }
 }
