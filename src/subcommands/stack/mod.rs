@@ -1,6 +1,7 @@
 //! Subcommands pertaining to stack management.
 
 mod track;
+pub use track::TrackArgs;
 
 mod create;
 pub use create::CreateArgs;

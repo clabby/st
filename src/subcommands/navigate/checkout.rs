@@ -11,12 +11,12 @@ pub struct CheckoutArgs;
 impl CheckoutArgs {
     /// Run the `checkout` subcommand.
     pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
-        // Write the log of the stacks.
         let branches = store.display_branches()?;
 
         let branch = inquire::Select::new("Select a branch to checkout", branches)
             .with_formatter(&|f| f.value.branch_name.clone())
             .prompt()?;
+
         store
             .repository
             .checkout_branch(branch.branch_name.as_str(), None)

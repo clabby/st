@@ -63,8 +63,9 @@ impl<'a> StoreWithRepository<'a> {
 
     /// Returns the current stack node, if the current branch exists within a tracked stack.
     pub fn current_stack_node(&mut self) -> Option<&mut StackNode> {
-        let current_branch_name = self.repository.current_branch().ok()?;
-        self.stacks.find_branch(current_branch_name.as_str())
+        let current_branch = self.repository.current_branch().ok()?;
+        let current_branch_name = current_branch.name().ok()??;
+        self.stacks.find_stack_node(current_branch_name)
     }
 
     /// Returns a vector of [DisplayBranch]es for the stack node and its children.
@@ -77,10 +78,15 @@ impl<'a> StoreWithRepository<'a> {
         let mut branches = Vec::default();
         self.stacks.fill_branches(&mut branches);
 
+        let current_branch = self.repository.current_branch()?;
+        let current_branch_name = current_branch
+            .name()?
+            .ok_or(anyhow!("Name of current branch not found"))?;
+
         // Write the log of the stacks.
         let mut buf = String::new();
         self.stacks
-            .write_log_short(&mut buf, Some(self.repository.current_branch()?.as_str()))?;
+            .write_log_short(&mut buf, Some(current_branch_name))?;
 
         // Zip the log with the branch names.
         let items = buf
@@ -123,14 +129,14 @@ impl StackNode {
     /// ## Returns
     /// - `Some(&mut StackNode)` - The stack node with the branch name.
     /// - `None` - If the branch name is not found within the stack node or its children.
-    pub fn find_branch(&mut self, branch_name: &str) -> Option<&mut StackNode> {
+    pub fn find_stack_node(&mut self, branch_name: &str) -> Option<&mut StackNode> {
         if self.branch == branch_name {
             return Some(self);
         }
 
         self.children
             .iter_mut()
-            .find_map(|child| child.find_branch(branch_name))
+            .find_map(|child| child.find_stack_node(branch_name))
     }
 
     /// Recursively searches for a [StackNode] with the branch name specified and prunes

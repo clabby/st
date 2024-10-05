@@ -3,7 +3,7 @@
 use crate::store::StoreWithRepository;
 use clap::Subcommand;
 use navigate::CheckoutArgs;
-use stack::{CreateArgs, DeleteArgs, LogArgs};
+use stack::{CreateArgs, DeleteArgs, LogArgs, TrackArgs};
 
 mod navigate;
 mod stack;
@@ -22,6 +22,9 @@ pub enum Subcommands {
     /// Print a tree of all local stacks.
     #[clap(aliases = ["l", "ls"])]
     Log(LogArgs),
+    /// Track the current branch on top of a stack node.
+    #[clap(alias = "tr")]
+    Track(TrackArgs),
 }
 
 impl Subcommands {
@@ -32,6 +35,7 @@ impl Subcommands {
             Self::Create(args) => args.run(store),
             Self::Delete(args) => args.run(store),
             Self::Log(args) => args.run(store),
+            Self::Track(args) => args.run(store),
         }
     }
 }

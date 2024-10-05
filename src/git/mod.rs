@@ -1,7 +1,7 @@
 //! Utilities for interacting with `git` repositories for the `st` application.
 
 use anyhow::{anyhow, Result};
-use git2::{build::CheckoutBuilder, BranchType, Repository};
+use git2::{build::CheckoutBuilder, Branch, BranchType, Repository};
 use std::env;
 
 /// Returns the repository for the current working directory, and [None] if
@@ -18,7 +18,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<String>` - The name of the current branch, or an error.
-    fn current_branch(&self) -> Result<String>;
+    fn current_branch(&self) -> Result<Branch>;
 
     /// Checks out a branch with the given `branch_name`.
     ///
@@ -36,7 +36,7 @@ pub trait RepositoryExt {
 }
 
 impl RepositoryExt for Repository {
-    fn current_branch(&self) -> Result<String> {
+    fn current_branch(&self) -> Result<Branch> {
         let head = self.head()?;
         let branch = self.find_branch(
             head.name()
@@ -44,11 +44,7 @@ impl RepositoryExt for Repository {
                 .trim_start_matches("refs/heads/"),
             BranchType::Local,
         )?;
-        let branch_name = branch
-            .name()?
-            .ok_or(anyhow!("Name of current branch not found"))?;
-
-        Ok(branch_name.to_string())
+        Ok(branch)
     }
 
     fn checkout_branch(
