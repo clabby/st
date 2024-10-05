@@ -52,8 +52,8 @@ impl TrackArgs {
         // Open a rebase operation, rebasing `current` on top of `parent`.
         let mut rebase = store.repository.rebase(
             Some(&annotated_current),
-            None,
             Some(&annotated_parent),
+            None,
             None,
         )?;
 
