@@ -4,7 +4,7 @@ use crate::{store::StoreWithRepository, subcommands::Subcommands};
 use anyhow::{anyhow, Result};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
-    ArgAction, CommandFactory, Parser,
+    ArgAction, Parser,
 };
 use git2::{BranchType, Repository};
 use inquire::Select;
@@ -68,7 +68,7 @@ impl Cli {
                     .collect::<Result<Vec<_>>>()?;
                 let trunk_branch = Select::new(&setup_message, branches).prompt()?;
 
-                let new_state = StoreWithRepository::new(trunk_branch, &repo);
+                let new_state = StoreWithRepository::new(&repo, trunk_branch);
                 new_state.write()?;
                 Ok(new_state)
             }

@@ -1,7 +1,5 @@
 //! `create` subcommand.
 
-use std::ffi::OsStr;
-
 use crate::{git::RepositoryExt, store::StoreWithRepository};
 use anyhow::{anyhow, Result};
 use clap::Args;
@@ -14,8 +12,8 @@ pub struct CreateArgs;
 
 impl CreateArgs {
     /// Run the `create` subcommand.
-    pub async fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
-        let StoreWithRepository { store, repository } = store;
+    pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
+        let StoreWithRepository { repository, .. } = store;
 
         let head = repository.head()?;
         let head_name = head.name().ok_or(anyhow!("Name of head not found"))?;

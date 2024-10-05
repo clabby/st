@@ -6,6 +6,7 @@ use anyhow::Result;
 use clap::Parser;
 
 mod cli;
+mod constants;
 mod git;
 mod github;
 mod store;
