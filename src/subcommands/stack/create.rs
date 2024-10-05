@@ -20,7 +20,7 @@ impl CreateArgs {
         // FLOW:
         // 1. If the current branch is tracked, create a new branch on top of the current stack.
         // 2. If the current branch is not tracked, error.
-        // TODO: Check tracked.
+        // TODO: Do above.
         if !head.is_branch() {
             return Err(anyhow!("Cannot create a stack on a detached HEAD."));
         } else if head.is_remote() {
@@ -36,6 +36,7 @@ impl CreateArgs {
             .repository
             .checkout_branch(branch_name.as_str(), None)?;
 
+        // Inform user of success.
         println!(
             "Successfully created and tracked new branch `{}` on top of `{}`.",
             Blue.paint(branch_name),
@@ -61,7 +62,7 @@ impl CreateArgs {
             )?;
 
             // Commit the staged items.
-            store.repository.commit(
+            let oid = store.repository.commit(
                 Some("HEAD"),
                 &signature,
                 &signature,
@@ -69,6 +70,11 @@ impl CreateArgs {
                 &tree,
                 &[&head_commit],
             )?;
+
+            println!(
+                "Successfully committed staged changes. Commit oid: `{}`",
+                Blue.paint(oid.to_string())
+            )
         }
 
         Ok(())
