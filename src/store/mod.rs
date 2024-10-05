@@ -67,15 +67,30 @@ pub struct StackNode {
 
 impl StackNode {
     /// Prints the stack node and its children for the termnal, in short-form.
-    pub fn write_log_short<T: Write>(&self, w: &mut T, checked_out: &str) -> Result<()> {
+    ///
+    /// ## Takes
+    /// - `w` - The writer to write the log to.
+    /// - `checked_out` - The name of the branch that is currently checked out.
+    ///
+    /// ## Returns
+    /// - `Ok(_)` - Log successfully written.
+    /// - `Err(_)` - If an error occurs while writing the log.
+    pub fn write_log_short<T: Write>(&self, w: &mut T, checked_out: Option<&str>) -> Result<()> {
         self.write_log_short_recursive(
             w,
-            checked_out,
+            checked_out.unwrap_or_default(),
             0,
             true,
             Default::default(),
             Default::default(),
         )
+    }
+
+    /// Returns a vector with the branch of the [StackNode] and its children.
+    pub fn branches(&self) -> Vec<String> {
+        let mut branches = Vec::default();
+        self.fill_branches(&mut branches);
+        branches
     }
 
     /// Recursively logs the stack node and its children for the terminal, in short-form.
@@ -136,6 +151,14 @@ impl StackNode {
         }
 
         Ok(())
+    }
+
+    /// Recursively a vector with the branches of the stack node and its children.
+    fn fill_branches(&self, branches: &mut Vec<String>) {
+        branches.push(self.branch.clone());
+        self.children
+            .iter()
+            .for_each(|child| child.fill_branches(branches))
     }
 }
 

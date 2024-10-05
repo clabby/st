@@ -1,6 +1,6 @@
 //! The CLI for `st`.
 
-use crate::{store::StoreWithRepository, subcommands::Subcommands};
+use crate::{git::active_repository, store::StoreWithRepository, subcommands::Subcommands};
 use anyhow::{anyhow, Result};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
@@ -29,13 +29,11 @@ impl Cli {
     /// Run the CLI application with the given arguments.
     pub async fn run(self) -> Result<()> {
         // Load the active repository.
-        let repo = crate::git::active_repository()
+        let repo = active_repository()
             .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
         let store = Self::load_store(&repo)?;
 
-        self.subcommand.run(store).await?;
-
-        Ok(())
+        self.subcommand.run(store).await
     }
 
     /// Loads the [StoreWithRepository] for the given [Repository].

@@ -14,7 +14,7 @@ impl LogArgs {
         let StoreWithRepository { stacks, repository } = store;
 
         let mut buf = String::new();
-        stacks.write_log_short(&mut buf, repository.current_branch()?.as_str())?;
+        stacks.write_log_short(&mut buf, Some(repository.current_branch()?.as_str()))?;
 
         print!("{}", buf);
         Ok(())
