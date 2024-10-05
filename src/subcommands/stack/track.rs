@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, ensure, Result};
 use clap::Args;
-use git2::BranchType;
+use git2::{BranchType, Signature};
 use nu_ansi_term::Color::Blue;
 
 /// CLI arguments for the `track` subcommand.
@@ -59,13 +59,21 @@ impl TrackArgs {
 
         // Apply all rebase operations, halting if there is a conflict.
         while let Some(op) = rebase.next() {
-            let _op = op?;
             let index = store.repository.index()?;
 
             ensure!(
                 !index.has_conflicts(),
                 "Conflicts detected. Resolve them first."
             );
+
+            // Commit the operation only if necessary (e.g., in case of modifications)
+            if op?.kind().unwrap() == git2::RebaseOperationType::Pick {
+                rebase.commit(
+                    None,
+                    &Signature::now("Ben Clabby", "ben@clab.by").unwrap(),
+                    None,
+                )?;
+            }
         }
 
         // Finish the rebase operation.
