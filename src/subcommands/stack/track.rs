@@ -77,7 +77,7 @@ impl TrackArgs {
         }
 
         // Finish the rebase operation.
-        rebase.finish(None)?;
+        rebase.finish(Some(&Signature::now("Ben Clabby", "ben@clab.by").unwrap()))?;
 
         // Check out the rebased branch.
         store
