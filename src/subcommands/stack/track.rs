@@ -71,6 +71,11 @@ impl TrackArgs {
         // Finish the rebase operation.
         rebase.finish(None)?;
 
+        // Check out the rebased branch.
+        store
+            .repository
+            .checkout_branch(current_branch_name, None)?;
+
         // Modify the store in-memory to reflect the new stack.
         store
             .stacks
