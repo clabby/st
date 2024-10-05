@@ -1,5 +1,7 @@
 //! `create` subcommand.
 
+use std::ffi::OsStr;
+
 use crate::{git::RepositoryExt, store::StoreWithRepository};
 use anyhow::{anyhow, Result};
 use clap::Args;
@@ -13,7 +15,9 @@ pub struct CreateArgs;
 impl CreateArgs {
     /// Run the `create` subcommand.
     pub async fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
-        let head = store.repository.head()?;
+        let StoreWithRepository { store, repository } = store;
+
+        let head = repository.head()?;
         let head_name = head.name().ok_or(anyhow!("Name of head not found"))?;
         let head_commit = head.peel_to_commit()?;
 
@@ -31,10 +35,8 @@ impl CreateArgs {
         let branch_name = inquire::Text::new("Name of new branch:").prompt()?;
 
         // Create the new branch and check it out.
-        store.repository.branch(&branch_name, &head_commit, false)?;
-        store
-            .repository
-            .checkout_branch(branch_name.as_str(), None)?;
+        repository.branch(&branch_name, &head_commit, false)?;
+        repository.checkout_branch(branch_name.as_str(), None)?;
 
         // Inform user of success.
         println!(
@@ -46,11 +48,11 @@ impl CreateArgs {
         let commit_staged = inquire::Confirm::new("Commit staged? [y/n]").prompt()?;
         if commit_staged {
             // Grab the index.
-            let mut index = store.repository.index()?;
+            let mut index = repository.index()?;
 
             // Fetch the write tree.
             let tree_id = index.write_tree()?;
-            let tree = store.repository.find_tree(tree_id)?;
+            let tree = repository.find_tree(tree_id)?;
 
             // Fetch the git config
             let config = Config::open_default()?;
@@ -61,12 +63,18 @@ impl CreateArgs {
                 config.get_string("user.email")?.as_str(),
             )?;
 
+            // Gather the commit message and description.
+            let message = inquire::Text::new("Commit message:").prompt()?;
+            let description = inquire::Editor::new("Commit description")
+                .with_file_extension(".md")
+                .prompt()?;
+
             // Commit the staged items.
-            let oid = store.repository.commit(
+            let oid = repository.commit(
                 Some("HEAD"),
                 &signature,
                 &signature,
-                "test",
+                format!("{}\n\n{}", message, description).as_str(),
                 &tree,
                 &[&head_commit],
             )?;

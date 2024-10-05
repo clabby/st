@@ -4,7 +4,7 @@ use crate::{store::StoreWithRepository, subcommands::Subcommands};
 use anyhow::{anyhow, Result};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
-    ArgAction, Parser,
+    ArgAction, CommandFactory, Parser,
 };
 use git2::{BranchType, Repository};
 use inquire::Select;
@@ -15,14 +15,14 @@ const ABOUT: &str = "st is a CLI application for working with stacked PRs on Git
 
 /// The CLI application for `st`.
 #[derive(Parser, Debug, Clone, Eq, PartialEq)]
-#[command(about = ABOUT, version, styles = cli_styles())]
+#[command(about = ABOUT, version, styles = cli_styles(), arg_required_else_help(true))]
 pub struct Cli {
     /// Verbosity level (0-4)
     #[arg(short, action = ArgAction::Count)]
     pub v: u8,
     /// The subcommand to run
     #[clap(subcommand)]
-    pub subcommand: Option<Subcommands>,
+    pub subcommand: Subcommands,
 }
 
 impl Cli {
@@ -33,10 +33,7 @@ impl Cli {
             .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
         let store = Self::load_store(&repo)?;
 
-        match self.subcommand {
-            Some(subcommand) => subcommand.run(store).await?,
-            None => todo!("Print help menu."),
-        }
+        self.subcommand.run(store).await?;
 
         Ok(())
     }

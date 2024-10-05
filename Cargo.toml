@@ -18,7 +18,7 @@ once_cell = "1.20"
 
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }
-inquire = "0.7"
+inquire = { version = "0.7", features = ["editor"] }
 nu-ansi-term = "0.50"
 
 # Serde
