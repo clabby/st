@@ -30,7 +30,7 @@ impl<'a> StoreWithRepository<'a> {
             repository,
             stacks: StackNode {
                 branch: trunk,
-                children: Vec::default(),
+                ..Default::default()
             },
         }
     }
@@ -131,6 +131,12 @@ pub struct StackNode {
     pub branch: String,
     /// The branches within the stack.
     pub children: Vec<StackNode>,
+    /// The open PR number for the branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr: Option<u64>,
+    /// The cached parent reference [git2::Oid], in [String] form.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_oid: Option<String>,
 }
 
 impl StackNode {
@@ -139,6 +145,8 @@ impl StackNode {
         Self {
             branch,
             children: Vec::default(),
+            pr: None,
+            parent_oid: None,
         }
     }
 
