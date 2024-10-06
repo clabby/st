@@ -44,16 +44,37 @@ impl<'a> StoreWithRepository<'a> {
             return Ok(None);
         }
 
-        let ser_store = std::fs::read_to_string(store_path)?;
-        let store: StackNode = toml::from_str(&ser_store)?;
-
-        Ok(Some(Self {
+        let store: StackNode = toml::from_str(&std::fs::read_to_string(store_path)?)?;
+        let mut store_with_repo = Self {
             repository,
             stacks: store,
-        }))
+        };
+        store_with_repo.prune()?;
+        store_with_repo.write()?;
+
+        Ok(Some(store_with_repo))
     }
 
-    /// Writes the [StackNode] to the given [Repository].
+    /// Updates the [StackNode] store with the current branches and their children. If any of the branches
+    /// have been deleted, they are pruned from the store.
+    pub fn prune(&mut self) -> Result<()> {
+        let mut branches = Vec::default();
+        self.stacks.fill_branches(&mut branches);
+
+        for branch in branches {
+            if self
+                .repository
+                .find_branch(branch.as_str(), git2::BranchType::Local)
+                .is_err()
+            {
+                self.stacks.delete_stack_node(branch.as_str());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Persists the [StackNode] to the given [Repository] on disk.
     pub fn write(&self) -> Result<()> {
         let store_path = store_path(&self.repository).ok_or(anyhow!("Store path not found."))?;
         let store = toml::to_string_pretty(&self.stacks)?;
