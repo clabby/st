@@ -100,7 +100,7 @@ impl RepositoryExt for Repository {
             Some(&annotated_current),
             None,
             Some(&annotated_parent),
-            opts,
+            Some(opts.unwrap_or(&mut Default::default())),
         )?;
 
         let sig = committer_signature()?;
@@ -129,7 +129,7 @@ impl RepositoryExt for Repository {
             }
         }
 
-        rebase.finish(Some(&sig))?;
+        rebase.finish(None)?;
 
         // Update the branch reference to point to the rebased head.
         let rebased_head = self.head()?.peel_to_commit()?;

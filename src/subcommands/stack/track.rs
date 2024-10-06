@@ -4,9 +4,8 @@ use crate::{
     git::RepositoryExt,
     store::{StackNode, StoreWithRepository},
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use clap::Args;
-use git2::{BranchType, Signature};
 use nu_ansi_term::Color::Blue;
 
 /// CLI arguments for the `track` subcommand.
