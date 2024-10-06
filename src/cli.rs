@@ -73,7 +73,7 @@ impl Cli {
 
                 // Print the welcome message.
                 println!(
-                    "\nSuccessfully set up repository with `{}`. Happy stacking 🌈\n",
+                    "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
                     Blue.paint("st")
                 );
 
