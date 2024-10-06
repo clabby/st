@@ -117,7 +117,15 @@ impl RepositoryExt for Repository {
                 .kind()
                 .ok_or(anyhow!("Rebase operation kind not found"))?;
             if matches!(kind, git2::RebaseOperationType::Pick) {
-                rebase.commit(None, &sig, None)?;
+                if let Err(e) = rebase.commit(None, &sig, None) {
+                    match e.code() {
+                        git2::ErrorCode::Applied => {
+                            // The commit was already applied, so continue.
+                            continue;
+                        }
+                        _ => return Err(e.into()),
+                    }
+                }
             }
         }
 
