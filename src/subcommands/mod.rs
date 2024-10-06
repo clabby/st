@@ -2,10 +2,8 @@
 
 use crate::store::StoreWithRepository;
 use clap::Subcommand;
-use navigate::CheckoutArgs;
-use stack::{CreateArgs, DeleteArgs, LogArgs, TrackArgs};
+use stack::{CheckoutArgs, CreateArgs, DeleteArgs, LogArgs, TrackArgs};
 
-mod navigate;
 mod stack;
 
 #[derive(Debug, Clone, Eq, PartialEq, Subcommand)]

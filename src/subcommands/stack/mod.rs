@@ -1,5 +1,8 @@
 //! Subcommands pertaining to stack management.
 
+mod checkout;
+pub use checkout::CheckoutArgs;
+
 mod track;
 pub use track::TrackArgs;
 
