@@ -221,11 +221,9 @@ impl StackNode {
         prefix: &str,
         connection: &str,
     ) -> Result<()> {
-        let branch_char = if self.branch == checked_out {
-            FILLED_CIRCLE
-        } else {
-            EMPTY_CIRCLE
-        };
+        let branch_char = (self.branch == checked_out)
+            .then_some(FILLED_CIRCLE)
+            .unwrap_or(EMPTY_CIRCLE);
 
         write!(
             w,

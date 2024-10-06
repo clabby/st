@@ -36,49 +36,6 @@ impl TrackArgs {
             .with_formatter(&|f| f.value.branch_name.clone())
             .prompt()?;
 
-        // Fetch the parent branch.
-        let parent_branch = store
-            .repository
-            .find_branch(parent_branch_name.branch_name.as_str(), BranchType::Local)?;
-
-        // Fetch the annotated commits for the current and parent branch heads.
-        let annotated_current = store
-            .repository
-            .find_annotated_commit(current_branch.get().peel_to_commit()?.id())?;
-        let annotated_parent = store
-            .repository
-            .find_annotated_commit(parent_branch.get().peel_to_commit()?.id())?;
-
-        // Open a rebase operation, rebasing `current` on top of `parent`.
-        let mut rebase = store.repository.rebase(
-            Some(&annotated_current),
-            Some(&annotated_parent),
-            None,
-            None,
-        )?;
-
-        // Apply all rebase operations, halting if there is a conflict.
-        while let Some(op) = rebase.next() {
-            let index = store.repository.index()?;
-
-            ensure!(
-                !index.has_conflicts(),
-                "Conflicts detected. Resolve them first."
-            );
-
-            // Commit the operation only if necessary (e.g., in case of modifications)
-            if op?.kind().unwrap() == git2::RebaseOperationType::Pick {
-                rebase.commit(
-                    None,
-                    &Signature::now("Ben Clabby", "ben@clab.by").unwrap(),
-                    None,
-                )?;
-            }
-        }
-
-        // Finish the rebase operation.
-        rebase.finish(Some(&Signature::now("Ben Clabby", "ben@clab.by").unwrap()))?;
-
         // Modify the store in-memory to reflect the new stack.
         store
             .stacks
@@ -87,9 +44,15 @@ impl TrackArgs {
             .children
             .push(StackNode::new(current_branch_name.to_string()));
 
-        // Point the branch target at the rebased head.
-        let head_after_rebase = store.repository.head()?.peel_to_commit()?;
-        current_branch.into_reference().set_target(head_after_rebase.id(), "rebase")?;
+        // Rebase the current branch onto the parent branch.
+        store.repository.rebase_branch_onto(
+            current_branch_name,
+            parent_branch_name.branch_name.as_str(),
+            None,
+        )?;
+        store
+            .repository
+            .checkout_branch(current_branch_name, None)?;
 
         // Update the store on disk.
         store.write()?;
