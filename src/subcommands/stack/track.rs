@@ -86,6 +86,11 @@ impl TrackArgs {
             .ok_or(anyhow!("Could not find stack node for parent branch"))?
             .children
             .push(StackNode::new(current_branch_name.to_string()));
+
+        // Point the branch target at the rebased head.
+        let head_after_rebase = store.repository.head()?.peel_to_commit()?;
+        current_branch.into_reference().set_target(head_after_rebase.id(), "rebase")?;
+
         // Update the store on disk.
         store.write()?;
 
