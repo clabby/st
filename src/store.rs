@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use git2::Repository;
-use std::path::PathBuf;
+use std::{borrow::Borrow, collections::VecDeque, path::PathBuf};
 
 /// The data store for `st` configuration, with its associated [Repository]
 pub struct StoreWithRepository<'a> {
@@ -78,10 +78,61 @@ impl<'a> StoreWithRepository<'a> {
     }
 
     /// Returns the current stack node, if the current branch exists within a tracked stack.
-    pub fn current_stack_node(&mut self) -> Option<StackedBranch> {
+    pub fn current_stack_node(&self) -> Option<StackedBranch> {
         let current_branch = self.repository.current_branch().ok()?;
         let current_branch_name = current_branch.name().ok()??;
         self.stack.find_child(current_branch_name)
+    }
+
+    /// Attempts to resolve the current stack in full. In the worst case, there is a fork upstack,
+    /// in which case this function will terminate at the fork, as it can not determine which
+    /// path to take.
+    pub fn resolve_active_stack(&self) -> Result<Vec<StackedBranch>> {
+        let mut stack = VecDeque::new();
+        let mut current = self
+            .current_stack_node()
+            .ok_or(anyhow!("Not within a stack"))?;
+
+        // First, resolve downstack. We're guaranteed to at least have the current branch, + any upstack
+        // branches.
+        let mut c = Some(current.clone());
+        while let Some(branch) = c {
+            let b = branch.borrow();
+
+            // Do not include the trunk branch in the stack.
+            if b.parent.is_none() {
+                break;
+            }
+
+            // Push the branch onto the front of the stack.
+            stack.push_front(branch.clone());
+
+            c = b
+                .parent
+                .clone()
+                .map(|p| p.upgrade())
+                .flatten()
+                .map(StackedBranch::from_shared);
+        }
+
+        // Next, resolve upstack or return if we're at the top of the stack.
+        if current.borrow().children.is_empty() {
+            return Ok(stack.into());
+        } else {
+            while current.borrow().children.len() == 1 {
+                let b = current
+                    .borrow()
+                    .children
+                    .first()
+                    .expect("Cannot be empty")
+                    .clone();
+
+                stack.push_back(b.clone());
+                current = b;
+            }
+        }
+
+        Ok(stack.into())
     }
 }
 

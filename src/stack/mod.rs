@@ -72,6 +72,11 @@ impl StackedBranch {
         Self(Rc::new(RefCell::new(branch)))
     }
 
+    /// Creates a new [StackedBranch] from the given shared reference to a [StackedBranchInner].
+    pub fn from_shared(branch: Rc<RefCell<StackedBranchInner>>) -> Self {
+        Self(branch)
+    }
+
     /// Returns a reference to the [StackedBranchInner] wrapped by this type.
     pub fn borrow(&self) -> Ref<StackedBranchInner> {
         self.as_ref().borrow()

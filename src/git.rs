@@ -1,7 +1,8 @@
 //! Utilities for interacting with `git` repositories for the `st` application.
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, bail, Result};
 use git2::{build::CheckoutBuilder, Branch, BranchType, Config, Repository, Signature};
+use nu_ansi_term::Color::Red;
 use std::{
     env,
     process::{Command, Stdio},
@@ -82,20 +83,22 @@ impl RepositoryExt for Repository {
 
     fn rebase_branch_onto(&self, branch_name: &str, onto_name: &str) -> Result<()> {
         // Check out the branch to rebase.
-        self.checkout_branch(branch_name, None)?;
+        self.checkout_branch(branch_name, Some(CheckoutBuilder::new().force()))?;
 
         // Run the interactive rebase with `git`. `git2` library does not support interactive
         // rebasing.
-        let status = Command::new("git")
-            .args(&["rebase", onto_name])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
+        let output = Command::new("git").args(&["rebase", onto_name]).output()?;
 
-        ensure!(
-            status.success(),
-            "Rebase failed. Resolve conflicts first and try again."
-        );
+        if !output.status.success() {
+            const QUOTE_CHAR: char = '▌';
+            let git_error = String::from_utf8_lossy(&output.stderr)
+                .trim_end_matches('\n')
+                .replace("\n", &format!("\n{} ", QUOTE_CHAR))
+                .replace("error: ", "");
+
+            let error_message = format!("{} Git error:\n{} {}", QUOTE_CHAR, QUOTE_CHAR, git_error);
+            bail!("Rebase failed.\n\n{}", Red.paint(error_message));
+        }
 
         Ok(())
     }
