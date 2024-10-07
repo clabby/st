@@ -1,9 +1,9 @@
 //! `create` subcommand.
 
 use crate::{
+    ctx::StContext,
     git::RepositoryExt,
-    stack::{LocalMetadata, StackedBranch, StackedBranchInner},
-    store::StoreWithRepository,
+    stack::{LocalMetadata, STree, STreeInner},
 };
 use anyhow::{anyhow, Result};
 use clap::Args;
@@ -19,10 +19,12 @@ pub struct CreateCmd {
 
 impl CreateCmd {
     /// Run the `create` subcommand.
-    pub fn run(self, mut store: StoreWithRepository<'_>) -> Result<()> {
-        let head = store.repository.head()?;
-        let head_name = head.name().ok_or(anyhow!("Name of head not found"))?;
-        let head_commit = head.peel_to_commit()?;
+    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+        let head_ref = ctx.repository.head()?;
+        let head_name = head_ref
+            .name()
+            .ok_or(anyhow!("Name of head ref not found"))?;
+        let head_commit = head_ref.peel_to_commit()?;
 
         // Prompt the user for the name of their new branch, or use the provided name.
         let branch_name = match self.branch_name {
@@ -31,26 +33,18 @@ impl CreateCmd {
         };
 
         // Write the new branch to the store in-memory.
-        let stack_node = store
+        let stack_node = ctx
             .current_stack_node()
             .ok_or(anyhow!("Not currently on a branch within a tracked stack."))?;
         let child_local_meta = LocalMetadata {
             branch_name: branch_name.clone(),
             parent_oid_cache: Some(head_commit.id().to_string()),
         };
-        stack_node.insert_child(StackedBranch::new(StackedBranchInner::new(
-            child_local_meta,
-            None,
-        )));
+        stack_node.insert_child(STree::new(STreeInner::new(child_local_meta, None)));
 
         // Create the new branch and check it out.
-        store.repository.branch(&branch_name, &head_commit, false)?;
-        store
-            .repository
-            .checkout_branch(branch_name.as_str(), None)?;
-
-        // Update the store on disk.
-        store.write()?;
+        ctx.repository.branch(&branch_name, &head_commit, false)?;
+        ctx.repository.checkout_branch(branch_name.as_str(), None)?;
 
         // Inform user of success.
         println!(

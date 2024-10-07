@@ -3,18 +3,19 @@
 use nu_ansi_term::Color;
 
 /// Name of the store file, within `.git`.
-pub(crate) const ST_STORE_FILE_NAME: &str = ".st_store.toml";
+pub(crate) const ST_CTX_FILE_NAME: &str = ".st_store.toml";
 
 /// Array of colors used for displaying stacks in the terminal.
 pub(crate) const COLORS: [Color; 6] = [
     Color::Blue,
     Color::Cyan,
     Color::Green,
-    Color::Red,
-    Color::Yellow,
     Color::Purple,
+    Color::Yellow,
+    Color::Red,
 ];
 
+pub(crate) const QUOTE_CHAR: char = '▌';
 pub(crate) const FILLED_CIRCLE: char = '●';
 pub(crate) const EMPTY_CIRCLE: char = '○';
 pub(crate) const BOTTOM_LEFT_BOX: char = '└';

@@ -1,6 +1,6 @@
 //! Formatting for the [StackedBranch] type.
 
-use super::StackedBranch;
+use super::STree;
 use crate::constants::{
     BOTTOM_LEFT_BOX, COLORS, EMPTY_CIRCLE, FILLED_CIRCLE, HORIZONTAL_BOX, LEFT_FORK_BOX,
     VERTICAL_BOX,
@@ -8,72 +8,14 @@ use crate::constants::{
 use anyhow::Result;
 use std::fmt::{Display, Write};
 
-impl StackedBranch {
-    /// Returns a vector of branch names within the [StackedBranch].
-    pub fn branches(&self) -> Vec<String> {
-        let mut branches = Vec::default();
-        self.fill_branches(&mut branches);
-        branches
-    }
-
-    /// Returns a vector of [DisplayBranch]es for the stack node and its children.
-    ///
-    /// ## Takes
-    /// - `checked_out` - The name of the branch that is currently checked out.
-    ///                   If [None], the current branch is not highlighted.
-    ///
-    /// ## Returns
-    /// - `Ok(Vec<DisplayBranch>)` - The branches of the stack node and its children,
-    ///                              in the order they are logged.
-    /// - `Err(_)` - If an error occurs while gathering the [DisplayBranch]es.
-    pub fn display_branches(&self, checked_out: Option<&str>) -> Result<Vec<DisplayBranch>> {
-        // Collect the branch names.
-        let branches = self.branches();
-
-        // Write the log of the stacks.
-        let mut buf = String::new();
-        self.write_tree(&mut buf, checked_out)?;
-
-        // Zip the pretty-printed tree with the branch names to assemble the DisplayBranches.
-        let items = buf
-            .lines()
-            .filter(|l| !l.is_empty())
-            .zip(branches.iter())
-            .map(|(line, branch_name)| DisplayBranch {
-                line: line.to_string(),
-                branch_name: branch_name.to_string(),
-            })
-            .collect::<Vec<_>>();
-
-        Ok(items)
-    }
-
-    /// Writes a pretty-printed representation of the [StackedBranch] tree to the passed [Write]r.
-    ///
-    /// ## Takes
-    /// - `w` - The writer to write the log to.
-    /// - `checked_out` - The name of the branch that is currently checked out.
-    ///
-    /// ## Returns
-    /// - `Ok(_)` - Tree successfully written.
-    /// - `Err(_)` - If an error occurs while writing the Tree.
-    pub fn write_tree<W: Write>(&self, w: &mut W, checked_out: Option<&str>) -> Result<()> {
-        self.write_tree_recursive(
-            w,
-            checked_out.unwrap_or_default(),
-            0,
-            true,
-            Default::default(),
-            Default::default(),
-        )
-    }
-
+impl STree {
     /// Recursively writes a pretty-printed representation of the [StackedBranch] tree to the passed
     /// [Write]r.
-    fn write_tree_recursive<W: Write>(
+    pub(crate) fn write_tree_recursive<W: Write>(
         &self,
         w: &mut W,
         checked_out: &str,
+        needs_restack: &[String],
         depth: usize,
         is_last: bool,
         prefix: &str,
@@ -84,14 +26,19 @@ impl StackedBranch {
             .then_some(FILLED_CIRCLE)
             .unwrap_or(EMPTY_CIRCLE);
 
+        let rendered = COLORS[depth % COLORS.len()].paint(format!(
+            "{}{} {}",
+            connection, branch_char, self_borrow.local.branch_name,
+        ));
+        let needs_restack_notif = needs_restack
+            .contains(&self_borrow.local.branch_name)
+            .then(|| " (needs restack)")
+            .unwrap_or_default();
         write!(
             w,
             "{}{}\n",
             prefix,
-            COLORS[depth % COLORS.len()].paint(format!(
-                "{}{} {}",
-                connection, branch_char, self_borrow.local.branch_name
-            ))
+            format!("{}{}", rendered, needs_restack_notif)
         )?;
 
         let mut children = self_borrow.children.iter().peekable();
@@ -120,6 +67,7 @@ impl StackedBranch {
             child.write_tree_recursive(
                 w,
                 checked_out,
+                needs_restack,
                 depth + 1,
                 is_last_child,
                 &prefix,
@@ -131,7 +79,7 @@ impl StackedBranch {
     }
 
     /// Recursively a vector with the branches of the stack node and its children.
-    fn fill_branches(&self, branch_names: &mut Vec<String>) {
+    pub(crate) fn fill_branches(&self, branch_names: &mut Vec<String>) {
         let self_borrow = self.borrow();
 
         branch_names.push(self_borrow.local.branch_name.clone());

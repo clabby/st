@@ -1,6 +1,6 @@
 //! The CLI for `st`.
 
-use crate::{git::active_repository, store::StoreWithRepository, subcommands::Subcommands};
+use crate::{ctx::StContext, git::active_repository, subcommands::Subcommands};
 use anyhow::{anyhow, Result};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
@@ -44,9 +44,9 @@ impl Cli {
     ///
     /// ## Returns
     /// - `Result<StoreWithRepository>` - The store for the repository.
-    pub(crate) fn try_load_store<'a>(repo: &'a Repository) -> Result<StoreWithRepository> {
+    pub(crate) fn try_load_store<'a>(repo: &'a Repository) -> Result<StContext> {
         // Attempt to load the repository store, or create a new one if it doesn't exist.
-        let store = StoreWithRepository::try_load(&repo)?;
+        let store = StContext::try_load(&repo)?;
         match store {
             Some(store) => Ok(store),
             None => {
@@ -68,17 +68,13 @@ impl Cli {
                     .collect::<Result<Vec<_>>>()?;
                 let trunk_branch = Select::new(&setup_message, branches).prompt()?;
 
-                // Create a new store with the trunk branch specified.
-                let new_state = StoreWithRepository::new(&repo, trunk_branch);
-                new_state.write()?;
-
                 // Print the welcome message.
                 println!(
                     "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
                     Blue.paint("st")
                 );
 
-                Ok(new_state)
+                Ok(StContext::fresh(&repo, trunk_branch))
             }
         }
     }
