@@ -2,7 +2,8 @@
 
 use crate::{
     git::RepositoryExt,
-    store::{StackNode, StoreWithRepository},
+    stack::{LocalMetadata, StackedBranch, StackedBranchInner},
+    store::StoreWithRepository,
 };
 use anyhow::{anyhow, Result};
 use clap::Args;
@@ -29,19 +30,23 @@ impl TrackCmd {
             .ok_or(anyhow::anyhow!("Name of current branch not found"))?;
 
         // Prompt the user to select the parent branch.
-        let branches = store.display_branches()?;
+        let branches = store.stack.display_branches(None)?;
         let prompt = format!("Select the parent of `{}`", Blue.paint(current_branch_name));
         let parent_branch_name = inquire::Select::new(prompt.as_str(), branches)
             .with_formatter(&|f| f.value.branch_name.clone())
             .prompt()?;
 
         // Modify the store in-memory to reflect the new stack.
+        let child_local_meta = LocalMetadata {
+            branch_name: current_branch_name.to_string(),
+            ..Default::default()
+        };
+        let new_child = StackedBranch::new(StackedBranchInner::new(child_local_meta, None));
         store
-            .stacks
-            .find_stack_node(parent_branch_name.branch_name.as_str())
+            .stack
+            .find_child(parent_branch_name.branch_name.as_str())
             .ok_or(anyhow!("Could not find stack node for parent branch"))?
-            .children
-            .push(StackNode::new(current_branch_name.to_string()));
+            .insert_child(new_child);
 
         // Rebase the current branch onto the parent branch.
         store

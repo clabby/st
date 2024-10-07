@@ -2,11 +2,11 @@
 
 use crate::{
     git::RepositoryExt,
-    store::{StackNode, StoreWithRepository},
+    stack::{LocalMetadata, StackedBranch, StackedBranchInner},
+    store::StoreWithRepository,
 };
 use anyhow::{anyhow, Result};
 use clap::Args;
-use git2::BranchType;
 use nu_ansi_term::Color::Blue;
 
 /// CLI arguments for the `create` subcommand.
@@ -34,9 +34,14 @@ impl CreateCmd {
         let stack_node = store
             .current_stack_node()
             .ok_or(anyhow!("Not currently on a branch within a tracked stack."))?;
-        stack_node
-            .children
-            .push(StackNode::new(branch_name.clone()));
+        let child_local_meta = LocalMetadata {
+            branch_name: branch_name.clone(),
+            parent_oid_cache: Some(head_commit.id().to_string()),
+        };
+        stack_node.insert_child(StackedBranch::new(StackedBranchInner::new(
+            child_local_meta,
+            None,
+        )));
 
         // Create the new branch and check it out.
         store.repository.branch(&branch_name, &head_commit, false)?;

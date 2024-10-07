@@ -11,7 +11,7 @@ pub struct CheckoutCmd;
 impl CheckoutCmd {
     /// Run the `checkout` subcommand.
     pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
-        let branches = store.display_branches()?;
+        let branches = store.stack.display_branches(None)?;
 
         let branch = inquire::Select::new("Select a branch to checkout", branches)
             .with_formatter(&|f| f.value.branch_name.clone())
