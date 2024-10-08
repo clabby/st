@@ -7,6 +7,7 @@ use std::{
 };
 
 mod fmt;
+pub(crate) use fmt::DisplayBranch;
 
 /// Local metadata for a branch that is tracked by `st`.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -17,7 +18,7 @@ pub struct LocalMetadata {
     /// The cached [git2::Oid] of the parent's target ref, in [String] form.
     ///
     /// Valid iff the parent branch's target ref is a commit with an equivalent [git2::Oid].
-    pub parent_oid_cache: Option<String>,
+    pub parent_oid_cache: String,
 }
 
 /// Remote metadata for a branch that is tracked by `st`.

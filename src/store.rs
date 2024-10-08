@@ -3,11 +3,12 @@
 use crate::{
     constants::ST_STORE_FILE_NAME,
     git::RepositoryExt,
-    stack::{LocalMetadata, StackedBranch, StackedBranchInner},
+    stack::{DisplayBranch, LocalMetadata, StackedBranch, StackedBranchInner},
 };
 use anyhow::{anyhow, Result};
 use git2::Repository;
-use std::{borrow::Borrow, collections::VecDeque, path::PathBuf};
+use nu_ansi_term::Color::Blue;
+use std::{collections::VecDeque, fmt::Write, path::PathBuf};
 
 /// The data store for `st` configuration, with its associated [Repository]
 pub struct StoreWithRepository<'a> {
@@ -54,7 +55,7 @@ impl<'a> StoreWithRepository<'a> {
     /// Updates the [StackNode] store with the current branches and their children. If any of the branches
     /// have been deleted, they are pruned from the store.
     pub fn prune(&mut self) -> Result<()> {
-        let branches = self.stack.branches();
+        let branches = self.branches();
 
         for branch in branches {
             if self
@@ -93,46 +94,144 @@ impl<'a> StoreWithRepository<'a> {
             .current_stack_node()
             .ok_or(anyhow!("Not within a stack"))?;
 
-        // First, resolve downstack. We're guaranteed to at least have the current branch, + any upstack
-        // branches.
-        let mut c = Some(current.clone());
-        while let Some(branch) = c {
-            let b = branch.borrow();
-
-            // Do not include the trunk branch in the stack.
-            if b.parent.is_none() {
-                break;
-            }
-
-            // Push the branch onto the front of the stack.
-            stack.push_front(branch.clone());
-
-            c = b
-                .parent
-                .clone()
-                .map(|p| p.upgrade())
-                .flatten()
-                .map(StackedBranch::from_shared);
+        // Resolve downstack
+        while let Some(parent) = {
+            let parent_ref = current.borrow().parent.clone();
+            parent_ref.and_then(|p| p.upgrade())
+        } {
+            stack.push_front(current.clone());
+            current = StackedBranch::from_shared(parent);
         }
 
-        // Next, resolve upstack or return if we're at the top of the stack.
-        if current.borrow().children.is_empty() {
-            return Ok(stack.into());
-        } else {
-            while current.borrow().children.len() == 1 {
-                let b = current
-                    .borrow()
-                    .children
-                    .first()
-                    .expect("Cannot be empty")
-                    .clone();
-
-                stack.push_back(b.clone());
-                current = b;
-            }
+        // Resolve upstack
+        while current.borrow().children.len() == 1 {
+            let child = current
+                .borrow()
+                .children
+                .first()
+                .expect("Cannot be empty")
+                .clone();
+            stack.push_back(child.clone());
+            current = child;
         }
 
         Ok(stack.into())
+    }
+
+    /// Restacks the active stack.
+    pub fn restack_current(&self) -> Result<()> {
+        let stack = self.resolve_active_stack()?;
+
+        for node in stack.iter() {
+            let parent_node = node
+                .borrow()
+                .parent
+                .clone()
+                .map(|p| {
+                    p.upgrade()
+                        .ok_or(anyhow!("Weak reference to parent is dead."))
+                })
+                .transpose()?
+                .ok_or(anyhow!("No parent found."))?;
+
+            let current = node.borrow();
+            let parent = parent_node.borrow();
+
+            let current_name = current.local.branch_name.as_str();
+            let parent_name = parent.local.branch_name.as_str();
+
+            let parent_ref = self
+                .repository
+                .find_branch(parent_name, git2::BranchType::Local)?;
+            let parent_ref_str = parent_ref
+                .get()
+                .target()
+                .ok_or(anyhow!("Parent ref target not found"))?
+                .to_string();
+            if current.local.parent_oid_cache == parent_ref_str {
+                println!(
+                    "Branch `{}` does not need to be restacked onto {}.",
+                    Blue.paint(current_name),
+                    Blue.paint(parent_name)
+                );
+                continue;
+            }
+
+            // Attempt to rebase the current branch onto the parent branch.
+            self.repository
+                .rebase_branch_onto(current_name, parent_name)?;
+
+            // Update the parent oid cache.
+            node.borrow_mut().local.parent_oid_cache = parent_ref_str;
+
+            println!(
+                "Restacked `{}` onto `{}` successfully.",
+                Blue.paint(current_name),
+                Blue.paint(parent_name)
+            );
+        }
+
+        // Write the store to disk.
+        self.write()
+    }
+
+    /// Returns a vector of branch names within the [StackedBranch].
+    pub fn branches(&self) -> Vec<String> {
+        let mut branches = Vec::default();
+        self.stack.fill_branches(&mut branches);
+        branches
+    }
+
+    /// Returns a vector of [DisplayBranch]es for the stack node and its children.
+    ///
+    /// ## Takes
+    /// - `checked_out` - The name of the branch that is currently checked out.
+    ///                   If [None], the current branch is not highlighted.
+    ///
+    /// ## Returns
+    /// - `Ok(Vec<DisplayBranch>)` - The branches of the stack node and its children,
+    ///                              in the order they are logged.
+    /// - `Err(_)` - If an error occurs while gathering the [DisplayBranch]es.
+    pub fn display_branches(&self, checked_out: Option<&str>) -> Result<Vec<DisplayBranch>> {
+        // Collect the branch names.
+        let branches = self.branches();
+
+        // Write the log of the stacks.
+        let mut buf = String::new();
+        self.write_tree(&mut buf, checked_out)?;
+
+        // Zip the pretty-printed tree with the branch names to assemble the DisplayBranches.
+        let items = buf
+            .lines()
+            .filter(|l| !l.is_empty())
+            .zip(branches.iter())
+            .map(|(line, branch_name)| DisplayBranch {
+                line: line.to_string(),
+                branch_name: branch_name.to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        Ok(items)
+    }
+
+    /// Writes a pretty-printed representation of the [StackedBranch] tree to the passed [Write]r.
+    ///
+    /// ## Takes
+    /// - `w` - The writer to write the log to.
+    /// - `checked_out` - The name of the branch that is currently checked out.
+    ///
+    /// ## Returns
+    /// - `Ok(_)` - Tree successfully written.
+    /// - `Err(_)` - If an error occurs while writing the Tree.
+    pub fn write_tree<W: Write>(&self, w: &mut W, checked_out: Option<&str>) -> Result<()> {
+        self.stack.write_tree_recursive(
+            w,
+            checked_out.unwrap_or_default(),
+            0,
+            true,
+            Default::default(),
+            Default::default(),
+        )
     }
 }
 

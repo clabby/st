@@ -3,10 +3,7 @@
 use anyhow::{anyhow, bail, Result};
 use git2::{build::CheckoutBuilder, Branch, BranchType, Config, Repository, Signature};
 use nu_ansi_term::Color::Red;
-use std::{
-    env,
-    process::{Command, Stdio},
-};
+use std::{env, process::Command};
 
 /// Returns the repository for the current working directory, and [None] if
 /// the current working directory is not within a git repository or an error

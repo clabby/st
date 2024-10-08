@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use clap::Args;
+use git2::BranchType;
 use nu_ansi_term::Color::Blue;
 
 /// CLI arguments for the `track` subcommand.
@@ -15,7 +16,7 @@ pub struct TrackCmd;
 
 impl TrackCmd {
     /// Run the `track` subcommand.
-    pub fn run(self, mut store: StoreWithRepository<'_>) -> Result<()> {
+    pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
         // Check if the current branch is already being tracked.
         if store.current_stack_node().is_some() {
             return Err(anyhow::anyhow!(
@@ -30,7 +31,7 @@ impl TrackCmd {
             .ok_or(anyhow::anyhow!("Name of current branch not found"))?;
 
         // Prompt the user to select the parent branch.
-        let branches = store.stack.display_branches(None)?;
+        let branches = store.display_branches(Some(current_branch_name))?;
         let prompt = format!("Select the parent of `{}`", Blue.paint(current_branch_name));
         let parent_branch_name = inquire::Select::new(prompt.as_str(), branches)
             .with_formatter(&|f| f.value.branch_name.clone())
@@ -39,7 +40,13 @@ impl TrackCmd {
         // Modify the store in-memory to reflect the new stack.
         let child_local_meta = LocalMetadata {
             branch_name: current_branch_name.to_string(),
-            ..Default::default()
+            parent_oid_cache: store
+                .repository
+                .find_branch(&parent_branch_name.branch_name, BranchType::Local)?
+                .get()
+                .target()
+                .ok_or(anyhow!("Could not find target for parent branch ref"))?
+                .to_string(),
         };
         let new_child = StackedBranch::new(StackedBranchInner::new(child_local_meta, None));
         store

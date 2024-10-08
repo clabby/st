@@ -19,7 +19,7 @@ pub struct CreateCmd {
 
 impl CreateCmd {
     /// Run the `create` subcommand.
-    pub fn run(self, mut store: StoreWithRepository<'_>) -> Result<()> {
+    pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
         let head = store.repository.head()?;
         let head_name = head.name().ok_or(anyhow!("Name of head not found"))?;
         let head_commit = head.peel_to_commit()?;
@@ -36,7 +36,7 @@ impl CreateCmd {
             .ok_or(anyhow!("Not currently on a branch within a tracked stack."))?;
         let child_local_meta = LocalMetadata {
             branch_name: branch_name.clone(),
-            parent_oid_cache: Some(head_commit.id().to_string()),
+            parent_oid_cache: head_commit.id().to_string(),
         };
         stack_node.insert_child(StackedBranch::new(StackedBranchInner::new(
             child_local_meta,

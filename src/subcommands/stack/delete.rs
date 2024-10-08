@@ -18,8 +18,10 @@ impl DeleteCmd {
     /// Run the `delete` subcommand.
     pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
         // Gather the branches to display to the user.
-        // TODO: checked out branch
-        let branches = store.stack.display_branches(None)?;
+
+        let current_branch = store.repository.current_branch()?;
+        let current_branch_name = current_branch.name()?;
+        let branches = store.display_branches(current_branch_name)?;
 
         let branch_name = match self.branch_name {
             Some(name) => name,
