@@ -48,7 +48,7 @@ impl TrackCmd {
                 .map(|p| p.to_string()),
         };
         let new_child = STree::new(STreeInner::new(child_local_meta, None));
-        ctx.stack
+        ctx.tree
             .find_branch(parent_branch_name.branch_name.as_str())
             .ok_or(anyhow!("Could not find stack node for parent branch"))?
             .insert_child(new_child);
@@ -59,9 +59,6 @@ impl TrackCmd {
 
         // Checkout the branch to complete the tracking operation.
         ctx.repository.checkout_branch(current_branch_name, None)?;
-
-        // Update the store on disk.
-        ctx.write()?;
 
         Ok(())
     }

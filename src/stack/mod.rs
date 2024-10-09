@@ -9,27 +9,27 @@ use std::{
 mod fmt;
 pub(crate) use fmt::DisplayBranch;
 
-/// A wrapper type for a [StackedBranchInner] that allows for shared ownership and interior mutability.
+/// A wrapper type for a [STreeInner] with shared ownership and interior mutability.
 #[derive(Debug, Clone)]
 pub struct STree(Rc<RefCell<STreeInner>>);
 
 impl STree {
-    /// Creates a new [StackedBranch] from the given owned [StackedBranchInner].
+    /// Creates a new [STree] from the given owned [STreeInner].
     pub fn new(branch: STreeInner) -> Self {
         Self(Rc::new(RefCell::new(branch)))
     }
 
-    /// Creates a new [StackedBranch] from the given shared reference to a [StackedBranchInner].
+    /// Creates a new [STree] from the given shared reference to a [STreeInner].
     pub fn from_shared(branch: Rc<RefCell<STreeInner>>) -> Self {
         Self(branch)
     }
 
-    /// Returns a reference to the [StackedBranchInner] wrapped by this type.
+    /// Returns a reference to the [STreeInner] wrapped by this type.
     pub fn borrow(&self) -> Ref<STreeInner> {
         self.as_ref().borrow()
     }
 
-    /// Returns a mutable reference to the [StackedBranchInner] wrapped by this type.
+    /// Returns a mutable reference to the [STreeInner] wrapped by this type.
     pub fn borrow_mut(&self) -> RefMut<STreeInner> {
         self.as_ref().borrow_mut()
     }

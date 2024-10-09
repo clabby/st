@@ -20,9 +20,11 @@ pub struct CreateCmd {
 impl CreateCmd {
     /// Run the `create` subcommand.
     pub fn run(self, ctx: StContext<'_>) -> Result<()> {
-        let head = ctx.repository.head()?;
-        let head_name = head.name().ok_or(anyhow!("Name of head not found"))?;
-        let head_commit = head.peel_to_commit()?;
+        let head_ref = ctx.repository.head()?;
+        let head_name = head_ref
+            .name()
+            .ok_or(anyhow!("Name of head ref not found"))?;
+        let head_commit = head_ref.peel_to_commit()?;
 
         // Prompt the user for the name of their new branch, or use the provided name.
         let branch_name = match self.branch_name {
@@ -43,9 +45,6 @@ impl CreateCmd {
         // Create the new branch and check it out.
         ctx.repository.branch(&branch_name, &head_commit, false)?;
         ctx.repository.checkout_branch(branch_name.as_str(), None)?;
-
-        // Update the store on disk.
-        ctx.write()?;
 
         // Inform user of success.
         println!(

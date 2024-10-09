@@ -1,7 +1,7 @@
-//! The data store for `st` configuration and stack state.
+//! The in-memory context of the `st` application.
 
 use crate::{
-    constants::ST_STORE_FILE_NAME,
+    constants::ST_CTX_FILE_NAME,
     git::RepositoryExt,
     stack::{DisplayBranch, LocalMetadata, STree, STreeInner},
 };
@@ -15,49 +15,38 @@ pub struct StContext<'a> {
     /// The repository associated with the store.
     pub repository: &'a Repository,
     /// The store for the repository.
-    pub stack: STree,
+    pub tree: STree,
 }
 
 impl<'a> StContext<'a> {
-    /// Creates a new [StContext] with the given [Repository] and trunk branch name.
-    pub fn new(repository: &'a Repository, trunk: String) -> Self {
+    /// Creates a fresh [StContext] with the given [Repository] and trunk branch name.
+    pub fn fresh(repository: &'a Repository, trunk: String) -> Self {
         let local_meta = LocalMetadata {
             branch_name: trunk,
             ..Default::default()
         };
-        let branch = STreeInner::new(local_meta, None);
+        let tree = STreeInner::new(local_meta, None);
+
         Self {
             repository,
-            stack: STree::new(branch),
+            tree: STree::new(tree),
         }
     }
 
     /// Loads the root [StackNode] for the given [Repository], and assembles a [StoreWithRepository].
     pub fn try_load(repository: &'a Repository) -> Result<Option<Self>> {
-        let store_path = store_path(&repository).ok_or(anyhow!("Store path not found"))?;
+        let store_path = ctx_path(&repository).ok_or(anyhow!("Store path not found"))?;
 
         // If the store doesn't exist, return None.
         if !store_path.exists() {
             return Ok(None);
         }
 
-        let store: STree = toml::from_str(&std::fs::read_to_string(store_path)?)?;
-        let mut store_with_repo = Self {
-            repository,
-            stack: store,
-        };
+        let stack: STree = toml::from_str(&std::fs::read_to_string(store_path)?)?;
+        let mut store_with_repo = Self { repository, tree: stack };
         store_with_repo.prune()?;
-        store_with_repo.write()?;
 
         Ok(Some(store_with_repo))
-    }
-
-    /// Persists the [StackNode] to the given [Repository] on disk.
-    pub fn write(&self) -> Result<()> {
-        let store_path = store_path(&self.repository).ok_or(anyhow!("Store path not found."))?;
-        let store = toml::to_string_pretty(&self.stack)?;
-        std::fs::write(store_path, store)?;
-        Ok(())
     }
 
     /// Updates the [StackNode] store with the current branches and their children. If any of the branches
@@ -71,7 +60,7 @@ impl<'a> StContext<'a> {
                 .find_branch(branch.as_str(), BranchType::Local)
                 .is_err()
             {
-                self.stack.delete_child(branch.as_str());
+                self.tree.delete_child(branch.as_str());
             }
         }
 
@@ -117,7 +106,7 @@ impl<'a> StContext<'a> {
     pub fn current_stack_node(&self) -> Option<STree> {
         let current_branch = self.repository.current_branch().ok()?;
         let current_branch_name = current_branch.name().ok()??;
-        self.stack.find_branch(current_branch_name)
+        self.tree.find_branch(current_branch_name)
     }
 
     /// Attempts to resolve the current stack in full. In the worst case, there is a fork upstack,
@@ -211,14 +200,13 @@ impl<'a> StContext<'a> {
             current.local.parent_oid_cache = Some(parent_ref_str);
         }
 
-        // Write the store to disk.
-        self.write()
+        Ok(())
     }
 
     /// Returns a vector of branch names within the [StackedBranch].
     pub fn branches(&self) -> Vec<String> {
         let mut branches = Vec::default();
-        self.stack.fill_branches(&mut branches);
+        self.tree.fill_branches(&mut branches);
         branches
     }
 
@@ -286,7 +274,7 @@ impl<'a> StContext<'a> {
             })
             .collect::<Vec<_>>();
 
-        self.stack.write_tree_recursive(
+        self.tree.write_tree_recursive(
             w,
             checked_out.unwrap_or_default(),
             needs_restack.as_slice(),
@@ -298,16 +286,25 @@ impl<'a> StContext<'a> {
     }
 }
 
-/// Returns the path to the [StackNode] store for the given [Repository].
+impl<'a> Drop for StContext<'a> {
+    fn drop(&mut self) {
+        // Persist the store on drop.
+        let store_path = ctx_path(&self.repository).expect("Failed to get context path.");
+        let store = toml::to_string_pretty(&self.tree).expect("Failed to serialize context.");
+        std::fs::write(store_path, store).expect("Failed to persist context to disk.");
+    }
+}
+
+/// Returns the path to the persistent application context for the given [Repository].
 ///
 /// ## Takes
-/// - `repository` - The repository to get the store path for.
+/// - `repository` - The repository to get the context path for.
 ///
 /// ## Returns
-/// - `Some(PathBuf)` - The path to the store.
+/// - `Some(PathBuf)` - The path to the serialized context.
 /// - `None` - If the repository does not have a workdir.
-pub fn store_path<'a>(repository: &Repository) -> Option<PathBuf> {
+pub fn ctx_path<'a>(repository: &Repository) -> Option<PathBuf> {
     repository
         .workdir()
-        .map(|p| p.join(".git").join(ST_STORE_FILE_NAME))
+        .map(|p| p.join(".git").join(ST_CTX_FILE_NAME))
 }
