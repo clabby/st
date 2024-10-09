@@ -123,8 +123,8 @@ impl<'a> StoreWithRepository<'a> {
         let stack = self.resolve_active_stack()?;
 
         for node in stack.iter() {
-            let parent_node = node
-                .borrow()
+            let mut current = node.borrow_mut();
+            let parent_node = current
                 .parent
                 .clone()
                 .map(|p| {
@@ -133,8 +133,6 @@ impl<'a> StoreWithRepository<'a> {
                 })
                 .transpose()?
                 .ok_or(anyhow!("No parent found."))?;
-
-            let current = node.borrow();
             let parent = parent_node.borrow();
 
             let current_name = current.local.branch_name.as_str();
@@ -161,14 +159,14 @@ impl<'a> StoreWithRepository<'a> {
             self.repository
                 .rebase_branch_onto(current_name, parent_name)?;
 
-            // Update the parent oid cache.
-            node.borrow_mut().local.parent_oid_cache = parent_ref_str;
-
             println!(
                 "Restacked `{}` onto `{}` successfully.",
                 Blue.paint(current_name),
                 Blue.paint(parent_name)
             );
+
+            // Update the parent oid cache.
+            current.local.parent_oid_cache = parent_ref_str;
         }
 
         // Write the store to disk.
