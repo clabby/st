@@ -6,7 +6,7 @@ use crate::{
     stack::{DisplayBranch, LocalMetadata, StackedBranch, StackedBranchInner},
 };
 use anyhow::{anyhow, Result};
-use git2::Repository;
+use git2::{BranchType, Repository};
 use nu_ansi_term::Color::Blue;
 use std::{collections::VecDeque, fmt::Write, path::PathBuf};
 
@@ -60,7 +60,7 @@ impl<'a> StoreWithRepository<'a> {
         for branch in branches {
             if self
                 .repository
-                .find_branch(branch.as_str(), git2::BranchType::Local)
+                .find_branch(branch.as_str(), BranchType::Local)
                 .is_err()
             {
                 self.stack.delete_child(branch.as_str());
@@ -142,7 +142,7 @@ impl<'a> StoreWithRepository<'a> {
 
             let parent_ref = self
                 .repository
-                .find_branch(parent_name, git2::BranchType::Local)?;
+                .find_branch(parent_name, BranchType::Local)?;
             let parent_ref_str = parent_ref
                 .get()
                 .target()
@@ -224,9 +224,27 @@ impl<'a> StoreWithRepository<'a> {
     /// - `Ok(_)` - Tree successfully written.
     /// - `Err(_)` - If an error occurs while writing the Tree.
     pub fn write_tree<W: Write>(&self, w: &mut W, checked_out: Option<&str>) -> Result<()> {
+        // Find all nodes that need to be restacked.
+        let needs_restack = self
+            .resolve_active_stack()?
+            .iter()
+            .filter_map(|n| {
+                let b = n.borrow();
+
+                let parent_node = b.parent.clone().map(|p| p.upgrade()).flatten()?;
+                let parent_branch = self
+                    .repository
+                    .find_branch(&parent_node.borrow().local.branch_name, BranchType::Local);
+                let parent_ref = parent_branch.ok()?.get().target()?.to_string();
+
+                (b.local.parent_oid_cache != parent_ref).then(|| b.local.branch_name.clone())
+            })
+            .collect::<Vec<_>>();
+
         self.stack.write_tree_recursive(
             w,
             checked_out.unwrap_or_default(),
+            needs_restack.as_slice(),
             0,
             true,
             Default::default(),

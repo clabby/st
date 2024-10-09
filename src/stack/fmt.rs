@@ -15,6 +15,7 @@ impl StackedBranch {
         &self,
         w: &mut W,
         checked_out: &str,
+        needs_restack: &[String],
         depth: usize,
         is_last: bool,
         prefix: &str,
@@ -25,14 +26,19 @@ impl StackedBranch {
             .then_some(FILLED_CIRCLE)
             .unwrap_or(EMPTY_CIRCLE);
 
+        let rendered = COLORS[depth % COLORS.len()].paint(format!(
+            "{}{} {}",
+            connection, branch_char, self_borrow.local.branch_name,
+        ));
+        let needs_restack_notif = needs_restack
+            .contains(&self_borrow.local.branch_name)
+            .then(|| " (needs restack)")
+            .unwrap_or_default();
         write!(
             w,
             "{}{}\n",
             prefix,
-            COLORS[depth % COLORS.len()].paint(format!(
-                "{}{} {}",
-                connection, branch_char, self_borrow.local.branch_name
-            ))
+            format!("{}{}", rendered, needs_restack_notif)
         )?;
 
         let mut children = self_borrow.children.iter().peekable();
@@ -61,6 +67,7 @@ impl StackedBranch {
             child.write_tree_recursive(
                 w,
                 checked_out,
+                needs_restack,
                 depth + 1,
                 is_last_child,
                 &prefix,
