@@ -35,6 +35,7 @@ impl SubmitCmd {
             // Push the branch to the remote.
             ctx.repository.push_branch(branch_name, "origin")?;
 
+
             let title = inquire::Text::new("Title of pull request:").prompt()?;
             let description = inquire::Editor::new("Pull request description").prompt()?;
 
