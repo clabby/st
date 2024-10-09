@@ -1,9 +1,8 @@
 //! `submit` subcommand.
 
-use crate::ctx::StContext;
+use crate::{ctx::StContext, git::RepositoryExt};
 use anyhow::{anyhow, Result};
 use clap::Args;
-use git2::{Cred, PushOptions, RemoteCallbacks};
 use octocrab::Octocrab;
 use std::{env, fmt::Display};
 
@@ -21,12 +20,6 @@ impl SubmitCmd {
         let gh_client = Octocrab::builder().personal_token(token.clone()).build()?;
         let (org, repo) = ctx.org_and_repository()?;
 
-        let mut remote = ctx.repository.find_remote("origin")?;
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(|_, _, _| Cred::userpass_plaintext("clabby", &token));
-        let mut push_opts = PushOptions::new();
-        push_opts.remote_callbacks(callbacks);
-
         let stack = ctx.resolve_active_stack()?;
         for node in stack {
             let branch_name = &node.borrow().local.branch_name;
@@ -40,13 +33,11 @@ impl SubmitCmd {
             let parent_name = &parent.borrow().local.branch_name;
 
             // Push the branch to the remote.
-            remote.push(
-                &[&format!("refs/heads/{}", branch_name)],
-                Some(&mut push_opts),
-            )?;
+            ctx.repository.push_branch(branch_name, "origin")?;
 
             let title = inquire::Text::new("Title of pull request:").prompt()?;
             let description = inquire::Editor::new("Pull request description").prompt()?;
+
             let submit_kind = inquire::Select::new(
                 "Pull request kind",
                 vec![SubmitKind::Draft, SubmitKind::Ready],

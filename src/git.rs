@@ -45,6 +45,16 @@ pub trait RepositoryExt {
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
     fn rebase_branch_onto(&self, branch_name: &str, onto: &str) -> Result<()>;
+
+    /// Pushes a branch to a registered remote.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to push.
+    /// - `remote_name` - The name of the remote to push to.
+    ///
+    /// ## Returns
+    /// - `Result<()>` - The result of the operation.
+    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()>;
 }
 
 impl RepositoryExt for Repository {
@@ -86,6 +96,24 @@ impl RepositoryExt for Repository {
 
             let error_message = format!("{} Git error:\n{} {}", QUOTE_CHAR, QUOTE_CHAR, git_error);
             bail!("Rebase failed.\n\n{}", Red.paint(error_message));
+        }
+
+        Ok(())
+    }
+
+    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()> {
+        let output = Command::new("git")
+            .args(&["push", remote_name, branch_name])
+            .output()?;
+
+        if !output.status.success() {
+            let git_error = String::from_utf8_lossy(&output.stderr)
+                .trim_end_matches('\n')
+                .replace("\n", &format!("\n{} ", QUOTE_CHAR))
+                .replace("error: ", "");
+
+            let error_message = format!("{} Git error:\n{} {}", QUOTE_CHAR, QUOTE_CHAR, git_error);
+            bail!("Pushing to remote failed.\n\n{}", Red.paint(error_message));
         }
 
         Ok(())
