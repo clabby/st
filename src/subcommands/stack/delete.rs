@@ -1,6 +1,6 @@
 //! `delete` subcommand.
 
-use crate::{git::RepositoryExt, store::StoreWithRepository};
+use crate::{ctx::StContext, git::RepositoryExt};
 use anyhow::{anyhow, bail, Result};
 use clap::Args;
 use git2::BranchType;
@@ -16,12 +16,12 @@ pub struct DeleteCmd {
 
 impl DeleteCmd {
     /// Run the `delete` subcommand.
-    pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
+    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
         // Gather the branches to display to the user.
 
-        let current_branch = store.repository.current_branch()?;
+        let current_branch = ctx.repository.current_branch()?;
         let current_branch_name = current_branch.name()?;
-        let branches = store.display_branches(current_branch_name)?;
+        let branches = ctx.display_branches(current_branch_name)?;
 
         let branch_name = match self.branch_name {
             Some(name) => name,
@@ -35,9 +35,9 @@ impl DeleteCmd {
 
         // Ensure the user doesn't attempt to delete the trunk branch, and that the branch
         // is tracked by `st`.
-        if branch_name == store.stack.borrow().local.branch_name {
+        if branch_name == ctx.stack.borrow().local.branch_name {
             bail!("Cannot delete the trunk branch.");
-        } else if store.stack.find_child(&branch_name).is_none() {
+        } else if ctx.stack.find_branch(&branch_name).is_none() {
             bail!("Branch not found in local `st` store. Is it tracked?");
         }
 
@@ -54,24 +54,21 @@ impl DeleteCmd {
         }
 
         // Delete the branch from the store in-memory.
-        store
-            .stack
+        ctx.stack
             .delete_child(&branch_name)
             .ok_or(anyhow!("Branch not found in local `st` store."))?;
 
         // Checkout the trunk branch prior to deletion.
-        store
-            .repository
-            .checkout_branch(store.stack.borrow().local.branch_name.as_str(), None)?;
+        ctx.repository
+            .checkout_branch(ctx.stack.borrow().local.branch_name.as_str(), None)?;
 
         // Delete the selected branch.
-        store
-            .repository
+        ctx.repository
             .find_branch(branch_name.as_str(), BranchType::Local)?
             .delete()?;
 
         // Update the store on disk.
-        store.write()?;
+        ctx.write()?;
 
         // Inform the user of success.
         println!("Successfully deleted branch `{}`.", Blue.paint(branch_name));

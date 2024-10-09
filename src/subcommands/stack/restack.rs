@@ -1,6 +1,6 @@
 //! `restack` subcommand.
 
-use crate::store::StoreWithRepository;
+use crate::ctx::StContext;
 use anyhow::Result;
 use clap::Args;
 
@@ -10,7 +10,7 @@ pub struct RestackCmd;
 
 impl RestackCmd {
     /// Run the `restack` subcommand.
-    pub fn run(self, store: StoreWithRepository<'_>) -> Result<()> {
-        store.restack_current()
+    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+        ctx.restack_current()
     }
 }

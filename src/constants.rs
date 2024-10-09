@@ -10,11 +10,12 @@ pub(crate) const COLORS: [Color; 6] = [
     Color::Blue,
     Color::Cyan,
     Color::Green,
-    Color::Red,
-    Color::Yellow,
     Color::Purple,
+    Color::Yellow,
+    Color::Red,
 ];
 
+pub(crate) const QUOTE_CHAR: char = '▌';
 pub(crate) const FILLED_CIRCLE: char = '●';
 pub(crate) const EMPTY_CIRCLE: char = '○';
 pub(crate) const BOTTOM_LEFT_BOX: char = '└';

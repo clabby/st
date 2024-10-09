@@ -1,7 +1,8 @@
 //! Utilities for interacting with `git` repositories for the `st` application.
 
+use crate::constants::QUOTE_CHAR;
 use anyhow::{anyhow, bail, Result};
-use git2::{build::CheckoutBuilder, Branch, BranchType, Config, Repository, Signature};
+use git2::{build::CheckoutBuilder, Branch, BranchType, Repository};
 use nu_ansi_term::Color::Red;
 use std::{env, process::Command};
 
@@ -10,15 +11,6 @@ use std::{env, process::Command};
 /// occurs.
 pub fn active_repository() -> Option<Repository> {
     Repository::discover(env::current_dir().ok()?).ok()
-}
-
-/// Returns the [Signature] for the committer.
-pub fn committer_signature<'a>() -> Result<Signature<'a>> {
-    let config = Config::open_default()?;
-    let name = config.get_string("user.name")?;
-    let email = config.get_string("user.email")?;
-
-    Signature::now(name.as_str(), email.as_str()).map_err(Into::into)
 }
 
 /// Extension trait for the [Repository] type to expose helper functions related to
@@ -87,7 +79,6 @@ impl RepositoryExt for Repository {
         let output = Command::new("git").args(&["rebase", onto_name]).output()?;
 
         if !output.status.success() {
-            const QUOTE_CHAR: char = '▌';
             let git_error = String::from_utf8_lossy(&output.stderr)
                 .trim_end_matches('\n')
                 .replace("\n", &format!("\n{} ", QUOTE_CHAR))

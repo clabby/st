@@ -1,6 +1,6 @@
 //! Formatting for the [StackedBranch] type.
 
-use super::StackedBranch;
+use super::STree;
 use crate::constants::{
     BOTTOM_LEFT_BOX, COLORS, EMPTY_CIRCLE, FILLED_CIRCLE, HORIZONTAL_BOX, LEFT_FORK_BOX,
     VERTICAL_BOX,
@@ -8,7 +8,7 @@ use crate::constants::{
 use anyhow::Result;
 use std::fmt::{Display, Write};
 
-impl StackedBranch {
+impl STree {
     /// Recursively writes a pretty-printed representation of the [StackedBranch] tree to the passed
     /// [Write]r.
     pub(crate) fn write_tree_recursive<W: Write>(

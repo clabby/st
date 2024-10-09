@@ -3,32 +3,32 @@
 use crate::{
     constants::ST_STORE_FILE_NAME,
     git::RepositoryExt,
-    stack::{DisplayBranch, LocalMetadata, StackedBranch, StackedBranchInner},
+    stack::{DisplayBranch, LocalMetadata, STree, STreeInner},
 };
 use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
 use nu_ansi_term::Color::Blue;
 use std::{collections::VecDeque, fmt::Write, path::PathBuf};
 
-/// The data store for `st` configuration, with its associated [Repository]
-pub struct StoreWithRepository<'a> {
+/// The in-memory context of the `st` application.
+pub struct StContext<'a> {
     /// The repository associated with the store.
     pub repository: &'a Repository,
     /// The store for the repository.
-    pub stack: StackedBranch,
+    pub stack: STree,
 }
 
-impl<'a> StoreWithRepository<'a> {
-    /// Creates a new [StoreWithRepository] with the given [Repository] and trunk branch name.
+impl<'a> StContext<'a> {
+    /// Creates a new [StContext] with the given [Repository] and trunk branch name.
     pub fn new(repository: &'a Repository, trunk: String) -> Self {
         let local_meta = LocalMetadata {
             branch_name: trunk,
             ..Default::default()
         };
-        let branch = StackedBranchInner::new(local_meta, None);
+        let branch = STreeInner::new(local_meta, None);
         Self {
             repository,
-            stack: StackedBranch::new(branch),
+            stack: STree::new(branch),
         }
     }
 
@@ -41,7 +41,7 @@ impl<'a> StoreWithRepository<'a> {
             return Ok(None);
         }
 
-        let store: StackedBranch = toml::from_str(&std::fs::read_to_string(store_path)?)?;
+        let store: STree = toml::from_str(&std::fs::read_to_string(store_path)?)?;
         let mut store_with_repo = Self {
             repository,
             stack: store,
@@ -50,6 +50,14 @@ impl<'a> StoreWithRepository<'a> {
         store_with_repo.write()?;
 
         Ok(Some(store_with_repo))
+    }
+
+    /// Persists the [StackNode] to the given [Repository] on disk.
+    pub fn write(&self) -> Result<()> {
+        let store_path = store_path(&self.repository).ok_or(anyhow!("Store path not found."))?;
+        let store = toml::to_string_pretty(&self.stack)?;
+        std::fs::write(store_path, store)?;
+        Ok(())
     }
 
     /// Updates the [StackNode] store with the current branches and their children. If any of the branches
@@ -70,25 +78,52 @@ impl<'a> StoreWithRepository<'a> {
         Ok(())
     }
 
-    /// Persists the [StackNode] to the given [Repository] on disk.
-    pub fn write(&self) -> Result<()> {
-        let store_path = store_path(&self.repository).ok_or(anyhow!("Store path not found."))?;
-        let store = toml::to_string_pretty(&self.stack)?;
-        std::fs::write(store_path, store)?;
-        Ok(())
+    /// Parses the GitHub organization and repository from the current repository's remote URL.
+    pub fn org_and_repository(&self) -> Result<(String, String)> {
+        let remote = self.repository.find_remote("origin")?;
+        let url = remote.url().ok_or(anyhow!("Remote URL not found."))?;
+
+        let (org, repo) = if url.starts_with("git@") {
+            // Handle SSH URL: git@github.com:org/repo.git
+            let parts = url.split(':').collect::<Vec<_>>();
+            let repo_parts = parts
+                .get(1)
+                .ok_or(anyhow!("Invalid SSH URL format."))?
+                .split('/')
+                .collect::<Vec<_>>();
+            let org = repo_parts
+                .get(0)
+                .ok_or(anyhow!("Organization not found."))?;
+            let repo = repo_parts.get(1).ok_or(anyhow!("Repository not found."))?;
+            (org.to_string(), repo.trim_end_matches(".git").to_string())
+        } else if url.starts_with("https://") {
+            // Handle HTTPS URL: https://github.com/org/repo.git
+            let parts = url.split('/').collect::<Vec<_>>();
+            let org = parts
+                .get(parts.len() - 2)
+                .ok_or(anyhow!("Organization not found."))?;
+            let repo = parts
+                .get(parts.len() - 1)
+                .ok_or(anyhow!("Repository not found."))?;
+            (org.to_string(), repo.trim_end_matches(".git").to_string())
+        } else {
+            return Err(anyhow!("Unsupported remote URL format."));
+        };
+
+        Ok((org, repo))
     }
 
     /// Returns the current stack node, if the current branch exists within a tracked stack.
-    pub fn current_stack_node(&self) -> Option<StackedBranch> {
+    pub fn current_stack_node(&self) -> Option<STree> {
         let current_branch = self.repository.current_branch().ok()?;
         let current_branch_name = current_branch.name().ok()??;
-        self.stack.find_child(current_branch_name)
+        self.stack.find_branch(current_branch_name)
     }
 
     /// Attempts to resolve the current stack in full. In the worst case, there is a fork upstack,
     /// in which case this function will terminate at the fork, as it can not determine which
     /// path to take.
-    pub fn resolve_active_stack(&self) -> Result<Vec<StackedBranch>> {
+    pub fn resolve_active_stack(&self) -> Result<Vec<STree>> {
         let mut stack = VecDeque::new();
         let mut current = self
             .current_stack_node()
@@ -100,7 +135,7 @@ impl<'a> StoreWithRepository<'a> {
             parent_ref.and_then(|p| p.upgrade())
         } {
             stack.push_front(current.clone());
-            current = StackedBranch::from_shared(parent);
+            current = STree::from_shared(parent);
         }
 
         // Resolve upstack
@@ -146,7 +181,14 @@ impl<'a> StoreWithRepository<'a> {
                 .target()
                 .ok_or(anyhow!("Parent ref target not found"))?
                 .to_string();
-            if current.local.parent_oid_cache == parent_ref_str {
+
+            if current
+                .local
+                .parent_oid_cache
+                .as_ref()
+                .map(|pid| pid == &parent_ref_str)
+                .unwrap_or_default()
+            {
                 println!(
                     "Branch `{}` does not need to be restacked onto {}.",
                     Blue.paint(current_name),
@@ -166,7 +208,7 @@ impl<'a> StoreWithRepository<'a> {
             );
 
             // Update the parent oid cache.
-            current.local.parent_oid_cache = parent_ref_str;
+            current.local.parent_oid_cache = Some(parent_ref_str);
         }
 
         // Write the store to disk.
@@ -235,7 +277,12 @@ impl<'a> StoreWithRepository<'a> {
                     .find_branch(&parent_node.borrow().local.branch_name, BranchType::Local);
                 let parent_ref = parent_branch.ok()?.get().target()?.to_string();
 
-                (b.local.parent_oid_cache != parent_ref).then(|| b.local.branch_name.clone())
+                (b.local
+                    .parent_oid_cache
+                    .as_ref()
+                    .map(|pid| pid != &parent_ref)
+                    .unwrap_or_default())
+                .then(|| b.local.branch_name.clone())
             })
             .collect::<Vec<_>>();
 
