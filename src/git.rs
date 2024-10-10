@@ -84,27 +84,25 @@ impl RepositoryExt for Repository {
         // Check out the branch to rebase.
         self.checkout_branch(branch_name, Some(CheckoutBuilder::new().force()))?;
 
-        // Run the interactive rebase with `git`. `git2` library does not support interactive
-        // rebasing.
-        let output = Command::new("git").args(&["rebase", onto_name]).output()?;
-
-        if !output.status.success() {
-            let git_error = String::from_utf8_lossy(&output.stderr)
-                .trim_end_matches('\n')
-                .replace("\n", &format!("\n{} ", QUOTE_CHAR))
-                .replace("error: ", "");
-
-            let error_message = format!("{} Git error:\n{} {}", QUOTE_CHAR, QUOTE_CHAR, git_error);
-            bail!("Rebase failed.\n\n{}", Red.paint(error_message));
-        }
-
-        Ok(())
+        execute_git_command(&["rebase", onto_name], false)
     }
 
     fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()> {
-        let output = Command::new("git")
-            .args(&["push", remote_name, branch_name])
-            .output()?;
+        execute_git_command(&["push", remote_name, branch_name], true)
+    }
+}
+
+/// Executes a `git` command with the given arguments in a blocking child task.
+fn execute_git_command(args: &[&str], interactive: bool) -> Result<()> {
+    let mut cmd = Command::new("git");
+    if interactive {
+        let status = cmd.args(args).status()?;
+
+        if !status.success() {
+            bail!("Error executing git operation.");
+        }
+    } else {
+        let output = cmd.args(args).output()?;
 
         if !output.status.success() {
             let git_error = String::from_utf8_lossy(&output.stderr)
@@ -113,9 +111,12 @@ impl RepositoryExt for Repository {
                 .replace("error: ", "");
 
             let error_message = format!("{} Git error:\n{} {}", QUOTE_CHAR, QUOTE_CHAR, git_error);
-            bail!("Pushing to remote failed.\n\n{}", Red.paint(error_message));
+            bail!(
+                "Error executing git operation.\n\n{}",
+                Red.paint(error_message)
+            );
         }
-
-        Ok(())
     }
+
+    Ok(())
 }

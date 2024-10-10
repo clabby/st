@@ -3,6 +3,7 @@
 use crate::{ctx::StContext, git::RepositoryExt};
 use anyhow::{anyhow, Result};
 use clap::Args;
+use nu_ansi_term::Color::Blue;
 use octocrab::Octocrab;
 use std::{env, fmt::Display};
 
@@ -35,19 +36,29 @@ impl SubmitCmd {
             // Push the branch to the remote.
             ctx.repository.push_branch(branch_name, "origin")?;
 
+            // Exit early if a PR has already been submitted.
+            if let Some(remote) = node.borrow().remote {
+                println!(
+                    "Pull request already submitted for branch `{}` (ID: {}) - Pushed latest changes.",
+                    Blue.paint(branch_name),
+                    Blue.paint(format!("{}", remote.pr_number))
+                );
+                return Ok(());
+            }
+
             let title = inquire::Text::new("Title of pull request:").prompt()?;
             let description = inquire::Editor::new("Pull request description").prompt()?;
-
             let submit_kind = inquire::Select::new(
                 "Pull request kind",
                 vec![SubmitKind::Draft, SubmitKind::Ready],
             )
             .prompt()?;
 
+            let pulls = gh_client.pulls(org.clone(), repo.clone());
+
             // Submit PR.
-            let pr_info = gh_client
-                .pulls(org.clone(), repo.clone())
-                .create(title, branch_name, parent_name)
+            let pr_info = pulls
+                .create(title, branch_name.clone(), parent_name.clone())
                 .body(description)
                 .draft(matches!(submit_kind, SubmitKind::Draft))
                 .send()
@@ -59,6 +70,16 @@ impl SubmitCmd {
                 // TODO: Comment ID
                 r
             });
+
+            let pr_link = format!(
+                "https://github.com/{}/{}/pulls/{}",
+                org, repo, pr_info.number
+            );
+            println!(
+                "Successfully submitted pull request #{} @ `{}`",
+                pr_info.number,
+                Blue.paint(pr_link)
+            );
         }
 
         Ok(())
