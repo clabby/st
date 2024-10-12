@@ -28,6 +28,38 @@ impl StackTree {
         Self { trunk, branches }
     }
 
+    /// Gets the trunk branch from the stack graph.
+    ///
+    /// ## Panics
+    /// - If the trunk branch does not exist.
+    pub fn trunk(&self) -> &TrackedBranch {
+        self.branches.get(&self.trunk).unwrap()
+    }
+
+    /// Gets a branch by name from the stack graph.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to get.
+    ///
+    /// ## Returns
+    /// - `Some(branch)` - The branch.
+    /// - `None` - The branch by the name of `branch_name` was not found.
+    pub fn get(&self, branch_name: &str) -> Option<&TrackedBranch> {
+        self.branches.get(branch_name)
+    }
+
+    /// Gets a mutable branch by name from the stack graph.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to get.
+    ///
+    /// ## Returns
+    /// - `Some(branch)` - The branch.
+    /// - `None` - The branch by the name of `branch_name` was not found.
+    pub fn get_mut(&mut self, branch_name: &str) -> Option<&mut TrackedBranch> {
+        self.branches.get_mut(branch_name)
+    }
+
     /// Adds a child branch to the passed parent branch, if it exists.
     ///
     /// ## Takes
@@ -89,30 +121,6 @@ impl StackTree {
             .ok()?;
 
         Some(branch)
-    }
-
-    /// Gets a branch by name from the stack graph.
-    ///
-    /// ## Takes
-    /// - `branch_name` - The name of the branch to get.
-    ///
-    /// ## Returns
-    /// - `Some(branch)` - The branch.
-    /// - `None` - The branch by the name of `branch_name` was not found.
-    pub fn get(&self, branch_name: &str) -> Option<&TrackedBranch> {
-        self.branches.get(branch_name)
-    }
-
-    /// Gets a mutable branch by name from the stack graph.
-    ///
-    /// ## Takes
-    /// - `branch_name` - The name of the branch to get.
-    ///
-    /// ## Returns
-    /// - `Some(branch)` - The branch.
-    /// - `None` - The branch by the name of `branch_name` was not found.
-    pub fn get_mut(&mut self, branch_name: &str) -> Option<&mut TrackedBranch> {
-        self.branches.get_mut(branch_name)
     }
 }
 

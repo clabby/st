@@ -9,7 +9,6 @@ use clap::{
 use git2::{BranchType, Repository};
 use inquire::Select;
 use nu_ansi_term::Color::Blue;
-use tracing::Level;
 
 const ABOUT: &str = "st is a CLI application for working with stacked PRs locally and on GitHub.";
 
@@ -31,20 +30,20 @@ impl Cli {
         // Load the active repository.
         let repo = active_repository()
             .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
-        let store = Self::try_load_store(&repo)?;
+        let store = Self::try_load_context(&repo)?;
 
         self.subcommand.run(store).await
     }
 
-    /// Loads the [StoreWithRepository] for the given [Repository]. If the store does not exist,
+    /// Loads the [StContext] for the given [Repository]. If the context does not exist,
     /// prompts the user to set up the repository with `st`.
     ///
     /// ## Takes
-    /// - `repo` - The repository to load the store for.
+    /// - `repo` - The repository to load the context for.
     ///
     /// ## Returns
-    /// - `Result<StoreWithRepository>` - The store for the repository.
-    pub(crate) fn try_load_store<'a>(repo: &'a Repository) -> Result<StContext> {
+    /// - `Result<StContext>` - The context for the repository.
+    pub(crate) fn try_load_context<'a>(repo: &'a Repository) -> Result<StContext> {
         // Attempt to load the repository store, or create a new one if it doesn't exist.
         let store = StContext::try_load(&repo)?;
         match store {
@@ -77,26 +76,6 @@ impl Cli {
                 Ok(StContext::fresh(&repo, trunk_branch))
             }
         }
-    }
-
-    /// Initializes the tracing subscriber
-    ///
-    /// ## Returns
-    /// - `Result<()>` - Ok if successful, Err otherwise.
-    pub(crate) fn init_tracing_subscriber(self) -> Result<Self> {
-        let subscriber = tracing_subscriber::fmt()
-            .with_max_level(match self.v {
-                0 => Level::ERROR,
-                1 => Level::WARN,
-                2 => Level::INFO,
-                3 => Level::DEBUG,
-                _ => Level::TRACE,
-            })
-            .finish();
-
-        tracing::subscriber::set_global_default(subscriber).map_err(|e| anyhow!(e))?;
-
-        Ok(self)
     }
 }
 

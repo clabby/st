@@ -14,5 +14,5 @@ mod subcommands;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    cli::Cli::parse().init_tracing_subscriber()?.run().await
+    cli::Cli::parse().run().await
 }

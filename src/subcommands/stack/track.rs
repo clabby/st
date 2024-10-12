@@ -1,11 +1,7 @@
 //! `track` subcommand.
 
-use crate::{
-    ctx::StContext,
-    git::RepositoryExt,
-    stack::{LocalMetadata, STree, STreeInner},
-};
-use anyhow::{anyhow, Result};
+use crate::{ctx::StContext, git::RepositoryExt, stack::LocalMetadata};
+use anyhow::Result;
 use clap::Args;
 use git2::BranchType;
 use nu_ansi_term::Color::Blue;
@@ -16,9 +12,9 @@ pub struct TrackCmd;
 
 impl TrackCmd {
     /// Run the `track` subcommand.
-    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
         // Check if the current branch is already being tracked.
-        if ctx.current_stack_node().is_some() {
+        if ctx.current_branch().is_some() {
             return Err(anyhow::anyhow!(
                 "Already tracking branch within a stack. Use `st checkout` to switch branches."
             ));
@@ -47,11 +43,10 @@ impl TrackCmd {
                 .target()
                 .map(|p| p.to_string()),
         };
-        let new_child = STree::new(STreeInner::new(child_local_meta, None));
+
+        // Insert the new branch into the store.
         ctx.tree
-            .find_branch(parent_branch_name.branch_name.as_str())
-            .ok_or(anyhow!("Could not find stack node for parent branch"))?
-            .insert_child(new_child);
+            .insert(&parent_branch_name.branch_name, child_local_meta)?;
 
         // Rebase the current branch onto the parent branch.
         ctx.repository

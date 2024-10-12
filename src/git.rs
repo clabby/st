@@ -93,6 +93,10 @@ impl RepositoryExt for Repository {
 }
 
 /// Executes a `git` command with the given arguments in a blocking child task.
+///
+/// ## Takes
+/// - `args` - The arguments to pass to the `git` command.
+/// - `interactive` - Whether the command should be interactive.
 fn execute_git_command(args: &[&str], interactive: bool) -> Result<()> {
     let mut cmd = Command::new("git");
     if interactive {

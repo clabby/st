@@ -46,105 +46,60 @@ impl<'a> StContext<'a> {
         Ok(Some(store_with_repo))
     }
 
-    /// Updates the [StackNode] store with the current branches and their children. If any of the branches
-    /// have been deleted, they are pruned from the store.
-    pub fn prune(&mut self) -> Result<()> {
-        let branches = self.branches();
-
-        for branch in branches {
-            if self
-                .repository
-                .find_branch(branch.as_str(), BranchType::Local)
-                .is_err()
-            {
-                self.tree.delete(branch.as_str());
-            }
-        }
-
-        Ok(())
+    /// Returns the checked out [TrackedBranch].
+    pub fn current_branch(&self) -> Option<&TrackedBranch> {
+        let current_branch_name = self.current_branch_name()?;
+        self.tree.get(current_branch_name.as_str())
     }
 
-    /// Parses the GitHub organization and repository from the current repository's remote URL.
-    pub fn org_and_repository(&self) -> Result<(String, String)> {
-        let remote = self.repository.find_remote("origin")?;
-        let url = remote.url().ok_or(anyhow!("Remote URL not found."))?;
-
-        let (org, repo) = if url.starts_with("git@") {
-            // Handle SSH URL: git@github.com:org/repo.git
-            let parts = url.split(':').collect::<Vec<_>>();
-            let repo_parts = parts
-                .get(1)
-                .ok_or(anyhow!("Invalid SSH URL format."))?
-                .split('/')
-                .collect::<Vec<_>>();
-            let org = repo_parts
-                .get(0)
-                .ok_or(anyhow!("Organization not found."))?;
-            let repo = repo_parts.get(1).ok_or(anyhow!("Repository not found."))?;
-            (org.to_string(), repo.trim_end_matches(".git").to_string())
-        } else if url.starts_with("https://") {
-            // Handle HTTPS URL: https://github.com/org/repo.git
-            let parts = url.split('/').collect::<Vec<_>>();
-            let org = parts
-                .get(parts.len() - 2)
-                .ok_or(anyhow!("Organization not found."))?;
-            let repo = parts
-                .get(parts.len() - 1)
-                .ok_or(anyhow!("Repository not found."))?;
-            (org.to_string(), repo.trim_end_matches(".git").to_string())
-        } else {
-            return Err(anyhow!("Unsupported remote URL format."));
-        };
-
-        Ok((org, repo))
-    }
-
-    /// Returns the current stack node, if the current branch exists within a tracked stack.
-    pub fn current_stack_node(&self) -> Option<&TrackedBranch> {
+    /// Returns the checked out [TrackedBranch]'s name.
+    pub fn current_branch_name(&self) -> Option<String> {
         let current_branch = self.repository.current_branch().ok()?;
         let current_branch_name = current_branch.name().ok()??;
-        self.tree.get(current_branch_name)
+        Some(current_branch_name.to_string())
     }
 
     /// Attempts to resolve the current stack in full. In the worst case, there is a fork upstack,
     /// in which case this function will terminate at the fork, as it can not determine which
     /// path to take.
-    pub fn resolve_active_stack(&self) -> Result<Vec<&mut TrackedBranch>> {
+    pub fn resolve_active_stack(&self) -> Result<Vec<String>> {
         let mut stack = VecDeque::new();
-        let mut current = self
-            .current_stack_node()
-            .ok_or(anyhow!("Not within a stack"))?;
+        let current = self.current_branch();
 
         // Resolve downstack
-        // while let Some(parent) = {
-        //     let parent_ref = current.borrow().parent.clone();
-        //     parent_ref.and_then(|p| p.upgrade())
-        // } {
-        //     stack.push_front(current.clone());
-        //     current = STree::from_shared(parent);
-        // }
-        //
-        // // Resolve upstack
-        // while current.borrow().children.len() == 1 {
-        //     let child = current
-        //         .borrow()
-        //         .children
-        //         .first()
-        //         .expect("Cannot be empty")
-        //         .clone();
-        //     stack.push_back(child.clone());
-        //     current = child;
-        // }
-        //
-        // Ok(stack.into())
-        todo!()
+        let mut current_name = current.map(|c| &c.local.branch_name);
+        while let Some(name) = current_name {
+            stack.push_front(name.clone());
+            current_name = self.tree.get(name.as_str()).and_then(|c| c.parent.as_ref())
+        }
+
+        // Resolve upstack
+        let mut current_children = current.map(|c| &c.children);
+        while let Some(children) = current_children {
+            // If there are multiple children, we have a fork, and we can not continue resolving the stack.
+            if children.len() != 1 {
+                break;
+            }
+
+            let child_name = children.iter().next().expect("Cannot be empty");
+            stack.push_back(child_name.clone());
+
+            current_children = self.tree.get(child_name.as_str()).map(|c| &c.children);
+        }
+
+        Ok(stack.into())
     }
 
     /// Restacks the active stack.
-    pub fn restack_current(&self) -> Result<()> {
+    pub fn restack_current(&mut self) -> Result<()> {
         let mut stack = self.resolve_active_stack()?;
 
         for current in stack.iter_mut() {
+            let current = self
+                .tree
+                .get_mut(current.as_str())
+                .ok_or(anyhow!("Branch not found."))?;
+
             let current_name = current.local.branch_name.as_str();
             let parent_name = current
                 .parent
@@ -192,11 +147,48 @@ impl<'a> StContext<'a> {
         Ok(())
     }
 
+    /// Parses the GitHub organization and repository from the current repository's remote URL.
+    pub fn org_and_repository(&self) -> Result<(String, String)> {
+        let remote = self.repository.find_remote("origin")?;
+        let url = remote.url().ok_or(anyhow!("Remote URL not found."))?;
+
+        let (org, repo) = if url.starts_with("git@") {
+            // Handle SSH URL: git@github.com:org/repo.git
+            let parts = url.split(':').collect::<Vec<_>>();
+            let repo_parts = parts
+                .get(1)
+                .ok_or(anyhow!("Invalid SSH URL format."))?
+                .split('/')
+                .collect::<Vec<_>>();
+            let org = repo_parts
+                .get(0)
+                .ok_or(anyhow!("Organization not found."))?;
+            let repo = repo_parts.get(1).ok_or(anyhow!("Repository not found."))?;
+            (org.to_string(), repo.trim_end_matches(".git").to_string())
+        } else if url.starts_with("https://") {
+            // Handle HTTPS URL: https://github.com/org/repo.git
+            let parts = url.split('/').collect::<Vec<_>>();
+            let org = parts
+                .get(parts.len() - 2)
+                .ok_or(anyhow!("Organization not found."))?;
+            let repo = parts
+                .get(parts.len() - 1)
+                .ok_or(anyhow!("Repository not found."))?;
+            (org.to_string(), repo.trim_end_matches(".git").to_string())
+        } else {
+            return Err(anyhow!("Unsupported remote URL format."));
+        };
+
+        Ok((org, repo))
+    }
+
     /// Returns a vector of branch names within the [StackedBranch].
-    pub fn branches(&self) -> Vec<String> {
+    pub fn branches(&self) -> Result<Vec<String>> {
         let mut branches = Vec::default();
-        self.tree.fill_branches(&mut branches);
-        branches
+        self.tree
+            .trunk()
+            .fill_branches(&self.tree.branches, &mut branches)?;
+        Ok(branches)
     }
 
     /// Returns a vector of [DisplayBranch]es for the stack node and its children.
@@ -211,7 +203,7 @@ impl<'a> StContext<'a> {
     /// - `Err(_)` - If an error occurs while gathering the [DisplayBranch]es.
     pub fn display_branches(&self, checked_out: Option<&str>) -> Result<Vec<DisplayBranch>> {
         // Collect the branch names.
-        let branches = self.branches();
+        let branches = self.branches()?;
 
         // Write the log of the stacks.
         let mut buf = String::new();
@@ -245,13 +237,13 @@ impl<'a> StContext<'a> {
         let needs_restack = self
             .resolve_active_stack()?
             .iter()
-            .filter_map(|n| {
-                let b = n.borrow();
+            .filter_map(|b| {
+                let b = self.tree.get(b)?;
 
-                let parent_node = b.parent.clone().map(|p| p.upgrade()).flatten()?;
+                let parent_branch_name = b.parent.as_ref()?;
                 let parent_branch = self
                     .repository
-                    .find_branch(&parent_node.borrow().local.branch_name, BranchType::Local);
+                    .find_branch(parent_branch_name, BranchType::Local);
                 let parent_ref = parent_branch.ok()?.get().target()?.to_string();
 
                 (b.local
@@ -263,8 +255,9 @@ impl<'a> StContext<'a> {
             })
             .collect::<Vec<_>>();
 
-        self.tree.write_tree_recursive(
+        self.tree.trunk().write_tree_recursive(
             w,
+            &self.tree.branches,
             checked_out.unwrap_or_default(),
             needs_restack.as_slice(),
             0,
@@ -272,6 +265,23 @@ impl<'a> StContext<'a> {
             Default::default(),
             Default::default(),
         )
+    }
+
+    /// Deletes branches within the context that no longer exist in the repository.
+    fn prune(&mut self) -> Result<()> {
+        let branches = self.branches()?;
+
+        for branch in branches {
+            if self
+                .repository
+                .find_branch(branch.as_str(), BranchType::Local)
+                .is_err()
+            {
+                self.tree.delete(branch.as_str());
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -16,7 +16,7 @@ pub struct DeleteCmd {
 
 impl DeleteCmd {
     /// Run the `delete` subcommand.
-    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
         // Gather the branches to display to the user.
 
         let current_branch = ctx.repository.current_branch()?;
@@ -35,9 +35,9 @@ impl DeleteCmd {
 
         // Ensure the user doesn't attempt to delete the trunk branch, and that the branch
         // is tracked by `st`.
-        if branch_name == ctx.tree.borrow().local.branch_name {
+        if branch_name == ctx.tree.trunk().local.branch_name {
             bail!("Cannot delete the trunk branch.");
-        } else if ctx.tree.find_branch(&branch_name).is_none() {
+        } else if ctx.tree.get(&branch_name).is_none() {
             bail!("Branch not found in local `st` store. Is it tracked?");
         }
 
@@ -55,7 +55,7 @@ impl DeleteCmd {
 
         // Checkout the trunk branch prior to deletion.
         ctx.repository
-            .checkout_branch(ctx.tree.borrow().local.branch_name.as_str(), None)?;
+            .checkout_branch(ctx.tree.trunk().local.branch_name.as_str(), None)?;
 
         // Delete the selected branch.
         ctx.repository
@@ -64,7 +64,7 @@ impl DeleteCmd {
 
         // Delete the branch from the store in-memory.
         ctx.tree
-            .delete_child(&branch_name)
+            .delete(&branch_name)
             .ok_or(anyhow!("Branch not found in local `st` store."))?;
 
         // Inform the user of success.

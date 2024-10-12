@@ -1,10 +1,6 @@
 //! `create` subcommand.
 
-use crate::{
-    ctx::StContext,
-    git::RepositoryExt,
-    stack::{LocalMetadata, STree, STreeInner},
-};
+use crate::{ctx::StContext, git::RepositoryExt, stack::LocalMetadata};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use nu_ansi_term::Color::Blue;
@@ -19,11 +15,11 @@ pub struct CreateCmd {
 
 impl CreateCmd {
     /// Run the `create` subcommand.
-    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
         let head_ref = ctx.repository.head()?;
-        let head_name = head_ref
-            .name()
-            .ok_or(anyhow!("Name of head ref not found"))?;
+        let head_name = ctx
+            .current_branch_name()
+            .ok_or(anyhow!("Could not determine current branch."))?;
         let head_commit = head_ref.peel_to_commit()?;
 
         // Prompt the user for the name of their new branch, or use the provided name.
@@ -33,14 +29,11 @@ impl CreateCmd {
         };
 
         // Write the new branch to the store in-memory.
-        let stack_node = ctx
-            .current_stack_node()
-            .ok_or(anyhow!("Not currently on a branch within a tracked stack."))?;
         let child_local_meta = LocalMetadata {
             branch_name: branch_name.clone(),
             parent_oid_cache: Some(head_commit.id().to_string()),
         };
-        stack_node.insert_child(STree::new(STreeInner::new(child_local_meta, None)));
+        ctx.tree.insert(&head_name, child_local_meta)?;
 
         // Create the new branch and check it out.
         ctx.repository.branch(&branch_name, &head_commit, false)?;
