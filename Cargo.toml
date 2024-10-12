@@ -24,10 +24,6 @@ nu-ansi-term = "0.50"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 
-# Logging
-tracing = "0.1"
-tracing-subscriber = "0.3"
-
 [[bin]]
 name = "st"
 path = "src/main.rs"
