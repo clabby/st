@@ -3,33 +3,27 @@
 use crate::{
     constants::ST_CTX_FILE_NAME,
     git::RepositoryExt,
-    stack::{DisplayBranch, LocalMetadata, STree, STreeInner},
+    stack::{DisplayBranch, StackTree, TrackedBranch},
 };
 use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
-use nu_ansi_term::Color::Blue;
+use nu_ansi_term::Color::{Cyan, Green};
 use std::{collections::VecDeque, fmt::Write, path::PathBuf};
 
 /// The in-memory context of the `st` application.
 pub struct StContext<'a> {
     /// The repository associated with the store.
     pub repository: &'a Repository,
-    /// The store for the repository.
-    pub tree: STree,
+    /// The tree of branches tracked by `st`.
+    pub tree: StackTree,
 }
 
 impl<'a> StContext<'a> {
     /// Creates a fresh [StContext] with the given [Repository] and trunk branch name.
     pub fn fresh(repository: &'a Repository, trunk: String) -> Self {
-        let local_meta = LocalMetadata {
-            branch_name: trunk,
-            ..Default::default()
-        };
-        let tree = STreeInner::new(local_meta, None);
-
         Self {
             repository,
-            tree: STree::new(tree),
+            tree: StackTree::new(trunk),
         }
     }
 
@@ -42,8 +36,11 @@ impl<'a> StContext<'a> {
             return Ok(None);
         }
 
-        let stack: STree = toml::from_str(&std::fs::read_to_string(store_path)?)?;
-        let mut store_with_repo = Self { repository, tree: stack };
+        let stack: StackTree = toml::from_str(&std::fs::read_to_string(store_path)?)?;
+        let mut store_with_repo = Self {
+            repository,
+            tree: stack,
+        };
         store_with_repo.prune()?;
 
         Ok(Some(store_with_repo))
@@ -60,7 +57,7 @@ impl<'a> StContext<'a> {
                 .find_branch(branch.as_str(), BranchType::Local)
                 .is_err()
             {
-                self.tree.delete_child(branch.as_str());
+                self.tree.delete(branch.as_str());
             }
         }
 
@@ -103,68 +100,60 @@ impl<'a> StContext<'a> {
     }
 
     /// Returns the current stack node, if the current branch exists within a tracked stack.
-    pub fn current_stack_node(&self) -> Option<STree> {
+    pub fn current_stack_node(&self) -> Option<&TrackedBranch> {
         let current_branch = self.repository.current_branch().ok()?;
         let current_branch_name = current_branch.name().ok()??;
-        self.tree.find_branch(current_branch_name)
+        self.tree.get(current_branch_name)
     }
 
     /// Attempts to resolve the current stack in full. In the worst case, there is a fork upstack,
     /// in which case this function will terminate at the fork, as it can not determine which
     /// path to take.
-    pub fn resolve_active_stack(&self) -> Result<Vec<STree>> {
+    pub fn resolve_active_stack(&self) -> Result<Vec<&mut TrackedBranch>> {
         let mut stack = VecDeque::new();
         let mut current = self
             .current_stack_node()
             .ok_or(anyhow!("Not within a stack"))?;
 
         // Resolve downstack
-        while let Some(parent) = {
-            let parent_ref = current.borrow().parent.clone();
-            parent_ref.and_then(|p| p.upgrade())
-        } {
-            stack.push_front(current.clone());
-            current = STree::from_shared(parent);
-        }
-
-        // Resolve upstack
-        while current.borrow().children.len() == 1 {
-            let child = current
-                .borrow()
-                .children
-                .first()
-                .expect("Cannot be empty")
-                .clone();
-            stack.push_back(child.clone());
-            current = child;
-        }
-
-        Ok(stack.into())
+        // while let Some(parent) = {
+        //     let parent_ref = current.borrow().parent.clone();
+        //     parent_ref.and_then(|p| p.upgrade())
+        // } {
+        //     stack.push_front(current.clone());
+        //     current = STree::from_shared(parent);
+        // }
+        //
+        // // Resolve upstack
+        // while current.borrow().children.len() == 1 {
+        //     let child = current
+        //         .borrow()
+        //         .children
+        //         .first()
+        //         .expect("Cannot be empty")
+        //         .clone();
+        //     stack.push_back(child.clone());
+        //     current = child;
+        // }
+        //
+        // Ok(stack.into())
+        todo!()
     }
 
     /// Restacks the active stack.
     pub fn restack_current(&self) -> Result<()> {
-        let stack = self.resolve_active_stack()?;
+        let mut stack = self.resolve_active_stack()?;
 
-        for node in stack.iter() {
-            let mut current = node.borrow_mut();
-            let parent_node = current
+        for current in stack.iter_mut() {
+            let current_name = current.local.branch_name.as_str();
+            let parent_name = current
                 .parent
                 .clone()
-                .map(|p| {
-                    p.upgrade()
-                        .ok_or(anyhow!("Weak reference to parent is dead."))
-                })
-                .transpose()?
-                .ok_or(anyhow!("No parent found."))?;
-            let parent = parent_node.borrow();
-
-            let current_name = current.local.branch_name.as_str();
-            let parent_name = parent.local.branch_name.as_str();
+                .ok_or(anyhow!("Attempted to restack trunk."))?;
 
             let parent_ref = self
                 .repository
-                .find_branch(parent_name, BranchType::Local)?;
+                .find_branch(parent_name.as_str(), BranchType::Local)?;
             let parent_ref_str = parent_ref
                 .get()
                 .target()
@@ -180,20 +169,20 @@ impl<'a> StContext<'a> {
             {
                 println!(
                     "Branch `{}` does not need to be restacked onto {}.",
-                    Blue.paint(current_name),
-                    Blue.paint(parent_name)
+                    Green.paint(current_name),
+                    Cyan.paint(parent_name)
                 );
                 continue;
             }
 
             // Attempt to rebase the current branch onto the parent branch.
             self.repository
-                .rebase_branch_onto(current_name, parent_name)?;
+                .rebase_branch_onto(current_name, parent_name.as_str())?;
 
             println!(
-                "Restacked `{}` onto `{}` successfully.",
-                Blue.paint(current_name),
-                Blue.paint(parent_name)
+                "Restacked `{}` on `{}`.",
+                Green.paint(current_name),
+                Cyan.paint(parent_name)
             );
 
             // Update the parent oid cache.

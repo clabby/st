@@ -1,14 +1,14 @@
 //! Formatting for the [StackedBranch] type.
 
-use super::STree;
 use crate::constants::{
     BOTTOM_LEFT_BOX, COLORS, EMPTY_CIRCLE, FILLED_CIRCLE, HORIZONTAL_BOX, LEFT_FORK_BOX,
     VERTICAL_BOX,
 };
 use anyhow::Result;
 use std::fmt::{Display, Write};
+use super::StackTree;
 
-impl STree {
+impl StackTree {
     /// Recursively writes a pretty-printed representation of the [StackedBranch] tree to the passed
     /// [Write]r.
     pub(crate) fn write_tree_recursive<W: Write>(
@@ -21,7 +21,6 @@ impl STree {
         prefix: &str,
         connection: &str,
     ) -> Result<()> {
-        let self_borrow = self.borrow();
         let branch_char = (self_borrow.local.branch_name == checked_out)
             .then_some(FILLED_CIRCLE)
             .unwrap_or(EMPTY_CIRCLE);
@@ -80,10 +79,8 @@ impl STree {
 
     /// Recursively a vector with the branches of the stack node and its children.
     pub(crate) fn fill_branches(&self, branch_names: &mut Vec<String>) {
-        let self_borrow = self.borrow();
-
-        branch_names.push(self_borrow.local.branch_name.clone());
-        self_borrow
+        branch_names.push(self.local.branch_name.clone());
+        self
             .children
             .iter()
             .for_each(|child| child.fill_branches(branch_names))

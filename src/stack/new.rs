@@ -1,33 +1,18 @@
-//! Structured, [Serialize] + [Deserialize] representation of a stack of branches.
+//! Structured, [Deserialize] + [Serialize] representation of a stack of branches.]
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-mod fmt;
-pub(crate) use fmt::DisplayBranch;
-
 /// An n-nary tree of branches, represented as a flat data structure.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct StackTree {
-    /// The name of the trunk branch.
-    pub trunk: String,
+pub struct StackGraph {
     /// A map of branch names to [TrackedBranch]es.
-    pub branches: HashMap<String, TrackedBranch>,
+    branches: HashMap<String, TrackedBranch>,
 }
 
-impl StackTree {
-    /// Creates a new [StackTree] with the given trunk branch name.
-    pub fn new(trunk: String) -> Self {
-        let branches = HashMap::from([(
-            trunk.clone(),
-            TrackedBranch::new(LocalMetadata::new(trunk.clone(), None), None),
-        )]);
-
-        Self { trunk, branches }
-    }
-
+impl StackGraph {
     /// Adds a child branch to the passed parent branch, if it exists.
     ///
     /// ## Takes
@@ -124,14 +109,14 @@ pub struct TrackedBranch {
     ///
     /// [None] if the branch is trunk.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent: Option<String>,
+    parent: Option<String>,
     /// The index of the child branches within the stack graph.
-    pub children: HashSet<String>,
+    children: HashSet<String>,
     /// The [LocalMetadata] for the branch.
-    pub local: LocalMetadata,
+    local: LocalMetadata,
     /// The [RemoteMetadata] for the branch.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote: Option<RemoteMetadata>,
+    remote: Option<RemoteMetadata>,
 }
 
 impl TrackedBranch {
