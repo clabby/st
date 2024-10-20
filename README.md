@@ -1,9 +1,11 @@
+Testing!
+
 <h1 align="center">
    <img src="./assets/banner.png" alt="st" width="35%" align="center">
 </h1>
 
 <h4 align="center">
-   Yet another tool for managing stacked PRs locally and on GitHub. 
+   Yet another tool for managing stacked PRs locally and on GitHub.
 </h4>
 
 <p align="center">
