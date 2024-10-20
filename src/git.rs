@@ -16,11 +16,17 @@ pub fn active_repository() -> Option<Repository> {
 /// Extension trait for the [Repository] type to expose helper functions related to
 /// repository management.
 pub trait RepositoryExt {
-    /// Returns the name of the current branch.
+    /// Returns the current [Branch].
+    ///
+    /// ## Returns
+    /// - `Result<Branch>` - The current [Branch], or an error.
+    fn current_branch(&self) -> Result<Branch>;
+
+    /// Returns the name of the current [Branch].
     ///
     /// ## Returns
     /// - `Result<String>` - The name of the current branch, or an error.
-    fn current_branch(&self) -> Result<Branch>;
+    fn current_branch_name(&self) -> Result<String>;
 
     /// Checks out a branch with the given `branch_name`.
     ///
@@ -30,11 +36,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
-    fn checkout_branch(
-        &self,
-        branch_name: &str,
-        opts: Option<&mut CheckoutBuilder<'_>>,
-    ) -> Result<()>;
+    fn checkout_branch(&self, branch_name: &str) -> Result<()>;
 
     /// Rebases a branch onto another branch.
     ///
@@ -69,20 +71,24 @@ impl RepositoryExt for Repository {
         Ok(branch)
     }
 
-    fn checkout_branch(
-        &self,
-        branch_name: &str,
-        opts: Option<&mut CheckoutBuilder<'_>>,
-    ) -> Result<()> {
+    fn current_branch_name(&self) -> Result<String> {
+        let branch = self.current_branch()?;
+        branch
+            .name()?
+            .ok_or(anyhow!("Branch name not found"))
+            .map(|n| n.to_string())
+    }
+
+    fn checkout_branch(&self, branch_name: &str) -> Result<()> {
         self.set_head(format!("refs/heads/{}", branch_name).as_str())?;
-        self.checkout_head(opts)?;
+        self.checkout_head(Some(CheckoutBuilder::new().force()))?;
 
         Ok(())
     }
 
     fn rebase_branch_onto(&self, branch_name: &str, onto_name: &str) -> Result<()> {
         // Check out the branch to rebase.
-        self.checkout_branch(branch_name, Some(CheckoutBuilder::new().force()))?;
+        self.checkout_branch(branch_name)?;
 
         execute_git_command(&["rebase", onto_name], false)
     }

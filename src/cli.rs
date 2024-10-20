@@ -30,7 +30,7 @@ impl Cli {
         // Load the active repository.
         let repo = crate::git::active_repository()
             .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
-        let context = Self::try_load_context(&repo)?;
+        let context = Self::load_ctx_or_initialize(&repo)?;
 
         self.subcommand.run(context).await
     }
@@ -43,7 +43,7 @@ impl Cli {
     ///
     /// ## Returns
     /// - `Result<StContext>` - The context for the repository.
-    pub(crate) fn try_load_context<'a>(repo: &'a Repository) -> Result<StContext> {
+    pub(crate) fn load_ctx_or_initialize<'a>(repo: &'a Repository) -> Result<StContext> {
         // Attempt to load the repository store, or create a new one if it doesn't exist.
         let store = StContext::try_load(&repo)?;
         match store {

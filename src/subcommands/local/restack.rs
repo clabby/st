@@ -11,6 +11,6 @@ pub struct RestackCmd;
 impl RestackCmd {
     /// Run the `restack` subcommand.
     pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
-        ctx.restack_current()
+        ctx.restack()
     }
 }

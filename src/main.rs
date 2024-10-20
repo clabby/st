@@ -9,7 +9,7 @@ mod cli;
 mod constants;
 mod ctx;
 mod git;
-mod stack;
+mod tree;
 mod subcommands;
 
 #[tokio::main]

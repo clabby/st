@@ -1,7 +1,7 @@
 //! Subcommands pertaining to stack management.
 
-mod checkout;
-pub use checkout::CheckoutCmd;
+mod log;
+pub use log::LogCmd;
 
 mod create;
 pub use create::CreateCmd;
@@ -9,11 +9,11 @@ pub use create::CreateCmd;
 mod delete;
 pub use delete::DeleteCmd;
 
-mod log;
-pub use log::LogCmd;
-
-mod track;
-pub use track::TrackCmd;
+mod checkout;
+pub use checkout::CheckoutCmd;
 
 mod restack;
 pub use restack::RestackCmd;
+
+mod track;
+pub use track::TrackCmd;

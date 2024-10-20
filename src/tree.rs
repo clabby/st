@@ -4,10 +4,13 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-mod fmt;
-pub(crate) use fmt::DisplayBranch;
-
 /// An n-nary tree of branches, represented as a flat data structure.
+///
+/// By itself, [StackTree] has no context of its relationship with the local repository. For this functionality,
+/// [StContext] holds onto both the [StackTree] and the [Repository]
+///
+/// [StContext]: crate::ctx::StContext
+/// [Repository]: git2::Repository
 #[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct StackTree {
@@ -22,10 +25,13 @@ impl StackTree {
     pub fn new(trunk_name: String) -> Self {
         let branches = HashMap::from([(
             trunk_name.clone(),
-            TrackedBranch::new(LocalMetadata::new(trunk_name.clone(), None), None),
+            TrackedBranch::new(trunk_name.clone(), None, None),
         )]);
 
-        Self { trunk_name, branches }
+        Self {
+            trunk_name,
+            branches,
+        }
     }
 
     /// Gets the trunk branch from the stack graph.
@@ -69,23 +75,29 @@ impl StackTree {
     /// ## Returns
     /// - `Ok(()` if the child branch was successfully added.)`
     /// - `Err(_)` if the parent branch does not exist.
-    pub fn insert(&mut self, parent_name: &str, local_metadata: LocalMetadata) -> Result<()> {
+    pub fn insert(
+        &mut self,
+        parent_name: &str,
+        parent_oid_cache: &str,
+        branch_name: &str,
+    ) -> Result<()> {
         // Get the parent branch.
-        let parent = self
-            .branches
-            .get_mut(parent_name)
-            .ok_or(anyhow!("Parent does not exist"))?;
-
-        // Get the name of the child branch.
-        let child_branch_name = local_metadata.branch_name.clone();
+        let parent = self.branches.get_mut(parent_name).ok_or(anyhow!(
+            "Parent branch {} is not tracked with `st`. Track it first with `st track`.",
+            parent_name
+        ))?;
 
         // Register the child branch with the parent.
-        parent.children.insert(child_branch_name.clone());
+        parent.children.insert(branch_name.to_string());
 
         // Create the child branch.
-        let child = TrackedBranch::new(local_metadata, Some(parent_name.to_string()));
+        let child = TrackedBranch::new(
+            branch_name.to_string(),
+            Some(parent_name.to_string()),
+            Some(parent_oid_cache.to_string()),
+        );
+        self.branches.insert(branch_name.to_string(), child);
 
-        self.branches.insert(child_branch_name, child);
         Ok(())
     }
 
@@ -98,30 +110,61 @@ impl StackTree {
     /// - `Some(branch)` - The deleted branch.
     /// - `None` - The branch by the name of `branch` was not found.
     pub fn delete(&mut self, branch_name: &str) -> Option<TrackedBranch> {
+        // Remove the branch from the stack tree.
         let branch = self.branches.remove(branch_name)?;
 
         // Remove the child from the parent's children list.
         if let Some(ref parent) = branch.parent {
             let parent_branch = self.branches.get_mut(parent)?;
-
             parent_branch.children.remove(branch_name);
+
+            // Re-link the children of the deleted branch to the parent.
+            branch
+                .children
+                .iter()
+                .try_for_each(|child_name| {
+                    // Change the pointer of the child to the parent.
+                    let child = self
+                        .branches
+                        .get_mut(child_name)
+                        .ok_or(anyhow!("Child does not exist"))?;
+                    child.parent = branch.parent.clone();
+
+                    // Add the child to the parent's children list.
+                    let parent = self
+                        .branches
+                        .get_mut(parent)
+                        .ok_or(anyhow!("Parent does not exist"))?;
+                    parent.children.insert(child_name.clone());
+                    Ok::<_, anyhow::Error>(())
+                })
+                .ok()?;
         }
 
-        // Re-link the children of the deleted branch to the parent.
-        branch
+        Some(branch)
+    }
+
+    /// Returns a vector of branch names in the stack graph. The vector is filled recursively, meaning that children are
+    /// guaranteed to be listed after their parents.
+    pub fn branches(&self) -> Result<Vec<String>> {
+        let mut branch_names = Vec::new();
+        self.fill_branches(&self.trunk_name, &mut branch_names)?;
+        Ok(branch_names)
+    }
+
+    /// Fills a vector with the trunk branch and its children. The resulting vector is filled recursively, meaning that
+    /// children are guaranteed to be listed after their parents.
+    fn fill_branches(&self, name: &str, branch_names: &mut Vec<String>) -> Result<()> {
+        let current = self
+            .branches
+            .get(name)
+            .ok_or(anyhow!("Branch {} is not tracked with `st`.", name))?;
+
+        branch_names.push(current.name.clone());
+        current
             .children
             .iter()
-            .try_for_each(|child_name| {
-                let child = self
-                    .branches
-                    .get_mut(child_name)
-                    .ok_or(anyhow!("Child does not exist"))?;
-                child.parent = branch.parent.clone();
-                Ok::<_, anyhow::Error>(())
-            })
-            .ok()?;
-
-        Some(branch)
+            .try_for_each(|child| self.fill_branches(child, branch_names))
     }
 }
 
@@ -129,6 +172,13 @@ impl StackTree {
 #[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct TrackedBranch {
+    /// The branch name.
+    pub name: String,
+    /// The parent branch's [git2::Oid] cache, in string form.
+    ///
+    /// Invalid iff the parent branch's `HEAD` commit is not equal to the [git2::Oid] cache.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_oid_cache: Option<String>,
     /// The index of the parent branch in the stack graph.
     ///
     /// [None] if the branch is trunk.
@@ -136,8 +186,6 @@ pub struct TrackedBranch {
     pub parent: Option<String>,
     /// The index of the child branches within the stack graph.
     pub children: HashSet<String>,
-    /// The [LocalMetadata] for the branch.
-    pub local: LocalMetadata,
     /// The [RemoteMetadata] for the branch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<RemoteMetadata>,
@@ -146,35 +194,17 @@ pub struct TrackedBranch {
 impl TrackedBranch {
     /// Creates a new [TrackedBranch] with the given local metadata and parent branch name.
     ///
-    /// Upon instantiation, the branch has children or remote metadata.
-    pub fn new(local: LocalMetadata, parent: Option<String>) -> Self {
+    /// Upon local instantiation, the branch has children or remote metadata.
+    pub fn new(
+        branch_name: String,
+        parent: Option<String>,
+        parent_oid_cache: Option<String>,
+    ) -> Self {
         Self {
+            name: branch_name,
             parent,
-            local,
-            ..Default::default()
-        }
-    }
-}
-
-/// Local metadata for a branch that is tracked by `st`.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct LocalMetadata {
-    /// The name of the branch.
-    pub(crate) branch_name: String,
-    /// The cached [git2::Oid] of the parent's target ref, in [String] form.
-    ///
-    /// Valid iff the parent branch's target ref is a commit with an equivalent [git2::Oid].
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) parent_oid_cache: Option<String>,
-}
-
-impl LocalMetadata {
-    /// Creates a new [LocalMetadata] with the given branch name and parent OID cache.
-    pub fn new(branch_name: String, parent_oid_cache: Option<String>) -> Self {
-        Self {
-            branch_name,
             parent_oid_cache,
+            ..Default::default()
         }
     }
 }
@@ -183,9 +213,12 @@ impl LocalMetadata {
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct RemoteMetadata {
-    /// The number of the pull request associated with the branch.
+    /// The number of the pull request on GitHub associated with the branch.
     pub(crate) pr_number: u64,
     /// The comment ID of the stack status comment on the pull request.
+    ///
+    /// This is used to update the comment with the latest stack status each time the stack
+    /// is submitted.
     pub(crate) comment_id: u64,
 }
 
@@ -201,15 +234,14 @@ impl RemoteMetadata {
 
 #[cfg(test)]
 mod test {
-    use crate::stack::LocalMetadata;
-
     use super::StackTree;
 
     #[test]
     fn insert_new_branch() {
         let mut tree = StackTree::new("main".to_string());
 
-        tree.insert("main", LocalMetadata::new("feature_branch".to_string(), None)).unwrap();
+        tree.insert("main", Default::default(), "feature_branch")
+            .unwrap();
 
         let feature_branch = tree.get("feature_branch").unwrap();
         assert_eq!(feature_branch.parent.clone().unwrap(), "main".to_string());
