@@ -59,6 +59,41 @@ impl<'a> StContext<'a> {
 
         Ok(Some(store_with_repo))
     }
+
+    /// Parses the GitHub owner and repository from the current repository's remote URL.
+    pub fn owner_and_repository(&self) -> Result<(String, String)> {
+        let remote = self.repository.find_remote("origin")?;
+        let url = remote.url().ok_or(anyhow!("Remote URL not found."))?;
+
+        let (org, repo) = if url.starts_with("git@") {
+            // Handle SSH URL: git@github.com:org/repo.git
+            let parts = url.split(':').collect::<Vec<_>>();
+            let repo_parts = parts
+                .get(1)
+                .ok_or(anyhow!("Invalid SSH URL format."))?
+                .split('/')
+                .collect::<Vec<_>>();
+            let org = repo_parts
+                .get(0)
+                .ok_or(anyhow!("Organization not found."))?;
+            let repo = repo_parts.get(1).ok_or(anyhow!("Repository not found."))?;
+            (org.to_string(), repo.trim_end_matches(".git").to_string())
+        } else if url.starts_with("https://") {
+            // Handle HTTPS URL: https://github.com/org/repo.git
+            let parts = url.split('/').collect::<Vec<_>>();
+            let org = parts
+                .get(parts.len() - 2)
+                .ok_or(anyhow!("Organization not found."))?;
+            let repo = parts
+                .get(parts.len() - 1)
+                .ok_or(anyhow!("Repository not found."))?;
+            (org.to_string(), repo.trim_end_matches(".git").to_string())
+        } else {
+            return Err(anyhow!("Unsupported remote URL format."));
+        };
+
+        Ok((org, repo))
+    }
 }
 
 impl<'a> Drop for StContext<'a> {

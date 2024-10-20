@@ -219,15 +219,15 @@ pub struct RemoteMetadata {
     ///
     /// This is used to update the comment with the latest stack status each time the stack
     /// is submitted.
-    pub(crate) comment_id: u64,
+    pub(crate) comment_id: Option<u64>,
 }
 
 impl RemoteMetadata {
     /// Creates a new [RemoteMetadata] with the given PR number and comment ID.
-    pub fn new(pr_number: u64, comment_id: u64) -> Self {
+    pub fn new(pr_number: u64) -> Self {
         Self {
             pr_number,
-            comment_id,
+            comment_id: None,
         }
     }
 }

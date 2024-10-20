@@ -6,6 +6,9 @@ use clap::Subcommand;
 mod local;
 use local::{CheckoutCmd, CreateCmd, DeleteCmd, LogCmd, RestackCmd, TrackCmd};
 
+mod remote;
+use remote::SubmitCmd;
+
 #[derive(Debug, Clone, Eq, PartialEq, Subcommand)]
 pub enum Subcommands {
     /// Checkout a branch that is tracked with `st`.
@@ -26,9 +29,9 @@ pub enum Subcommands {
     /// Track the current branch on top of a tracked stack node.
     #[clap(visible_alias = "tr")]
     Track(TrackCmd),
-    // /// Submit the current PR stack to GitHub.
-    // #[clap(visible_aliases = ["s", "ss"])]
-    // Submit(SubmitCmd),
+    /// Submit the current PR stack to GitHub.
+    #[clap(visible_aliases = ["s", "ss"])]
+    Submit(SubmitCmd),
 }
 
 impl Subcommands {
@@ -43,7 +46,7 @@ impl Subcommands {
             Self::Restack(args) => args.run(ctx),
             Self::Track(args) => args.run(ctx),
             // // Remote
-            // Self::Submit(args) => args.run(ctx).await,
+            Self::Submit(args) => args.run(ctx).await,
         }
     }
 }

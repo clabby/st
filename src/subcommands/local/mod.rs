@@ -1,4 +1,4 @@
-//! Subcommands pertaining to stack management.
+//! Subcommands pertaining to local stack management.
 
 mod log;
 pub use log::LogCmd;
