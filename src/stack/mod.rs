@@ -12,20 +12,20 @@ pub(crate) use fmt::DisplayBranch;
 #[serde(rename_all = "kebab-case")]
 pub struct StackTree {
     /// The name of the trunk branch.
-    pub trunk: String,
+    pub trunk_name: String,
     /// A map of branch names to [TrackedBranch]es.
     pub branches: HashMap<String, TrackedBranch>,
 }
 
 impl StackTree {
     /// Creates a new [StackTree] with the given trunk branch name.
-    pub fn new(trunk: String) -> Self {
+    pub fn new(trunk_name: String) -> Self {
         let branches = HashMap::from([(
-            trunk.clone(),
-            TrackedBranch::new(LocalMetadata::new(trunk.clone(), None), None),
+            trunk_name.clone(),
+            TrackedBranch::new(LocalMetadata::new(trunk_name.clone(), None), None),
         )]);
 
-        Self { trunk, branches }
+        Self { trunk_name, branches }
     }
 
     /// Gets the trunk branch from the stack graph.
@@ -33,7 +33,7 @@ impl StackTree {
     /// ## Panics
     /// - If the trunk branch does not exist.
     pub fn trunk(&self) -> &TrackedBranch {
-        self.branches.get(&self.trunk).unwrap()
+        self.branches.get(&self.trunk_name).unwrap()
     }
 
     /// Gets a branch by name from the stack graph.
@@ -76,6 +76,7 @@ impl StackTree {
             .get_mut(parent_name)
             .ok_or(anyhow!("Parent does not exist"))?;
 
+        // Get the name of the child branch.
         let child_branch_name = local_metadata.branch_name.clone();
 
         // Register the child branch with the parent.
@@ -195,5 +196,22 @@ impl RemoteMetadata {
             pr_number,
             comment_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::stack::LocalMetadata;
+
+    use super::StackTree;
+
+    #[test]
+    fn insert_new_branch() {
+        let mut tree = StackTree::new("main".to_string());
+
+        tree.insert("main", LocalMetadata::new("feature_branch".to_string(), None)).unwrap();
+
+        let feature_branch = tree.get("feature_branch").unwrap();
+        assert_eq!(feature_branch.parent.clone().unwrap(), "main".to_string());
     }
 }

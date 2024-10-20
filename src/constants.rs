@@ -2,6 +2,9 @@
 
 use nu_ansi_term::Color;
 
+/// Name of the `.git` directory.
+pub(crate) const GIT_DIR: &str = ".git";
+
 /// Name of the global config file.
 pub(crate) const ST_CFG_FILE_NAME: &str = "st.toml";
 

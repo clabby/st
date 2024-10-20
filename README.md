@@ -3,7 +3,7 @@
 </h1>
 
 <h4 align="center">
-   Yet another tool for managing stacked PRs locally and on GitHub. 
+   Yet another tool for managing stacked PRs locally and on GitHub, built on [`libgit2`](https://crates.io/crates/git2) and [`git`](https://github.com/git/git).
 </h4>
 
 <p align="center">

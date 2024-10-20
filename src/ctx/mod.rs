@@ -1,7 +1,7 @@
 //! The in-memory context of the `st` application.
 
 use crate::{
-    constants::ST_CTX_FILE_NAME,
+    constants::{GIT_DIR, ST_CTX_FILE_NAME},
     git::RepositoryExt,
     stack::{DisplayBranch, StackTree, TrackedBranch},
 };
@@ -9,6 +9,20 @@ use anyhow::{anyhow, Result};
 use git2::{BranchType, Repository};
 use nu_ansi_term::Color::{Cyan, Green};
 use std::{collections::VecDeque, fmt::Write, path::PathBuf};
+
+/// Returns the path to the persistent application context for the given [Repository].
+///
+/// ## Takes
+/// - `repository` - The repository to get the context path for.
+///
+/// ## Returns
+/// - `Some(PathBuf)` - The path to the serialized context.
+/// - `None` - If the repository does not have a workdir.
+pub fn ctx_path<'a>(repository: &Repository) -> Option<PathBuf> {
+    repository
+        .workdir()
+        .map(|p| p.join(GIT_DIR).join(ST_CTX_FILE_NAME))
+}
 
 /// The in-memory context of the `st` application.
 pub struct StContext<'a> {
@@ -291,18 +305,4 @@ impl<'a> Drop for StContext<'a> {
         let store = toml::to_string_pretty(&self.tree).expect("Failed to serialize context.");
         std::fs::write(store_path, store).expect("Failed to persist context to disk.");
     }
-}
-
-/// Returns the path to the persistent application context for the given [Repository].
-///
-/// ## Takes
-/// - `repository` - The repository to get the context path for.
-///
-/// ## Returns
-/// - `Some(PathBuf)` - The path to the serialized context.
-/// - `None` - If the repository does not have a workdir.
-pub fn ctx_path<'a>(repository: &Repository) -> Option<PathBuf> {
-    repository
-        .workdir()
-        .map(|p| p.join(".git").join(ST_CTX_FILE_NAME))
 }

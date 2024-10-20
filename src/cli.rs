@@ -1,6 +1,6 @@
 //! The CLI for `st`.
 
-use crate::{ctx::StContext, git::active_repository, subcommands::Subcommands};
+use crate::{ctx::StContext, subcommands::Subcommands};
 use anyhow::{anyhow, Result};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
@@ -28,11 +28,11 @@ impl Cli {
     /// Run the CLI application with the given arguments.
     pub async fn run(self) -> Result<()> {
         // Load the active repository.
-        let repo = active_repository()
+        let repo = crate::git::active_repository()
             .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
-        let store = Self::try_load_context(&repo)?;
+        let context = Self::try_load_context(&repo)?;
 
-        self.subcommand.run(store).await
+        self.subcommand.run(context).await
     }
 
     /// Loads the [StContext] for the given [Repository]. If the context does not exist,
@@ -55,6 +55,7 @@ impl Cli {
                 );
 
                 // Ask the user to specify the trunk branch of the repository.
+                // The trunk branch must be a local branch.
                 let branches = repo
                     .branches(Some(BranchType::Local))?
                     .into_iter()
