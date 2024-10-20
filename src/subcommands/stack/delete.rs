@@ -17,8 +17,6 @@ pub struct DeleteCmd {
 impl DeleteCmd {
     /// Run the `delete` subcommand.
     pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
-        // Gather the branches to display to the user.
-
         let current_branch = ctx.repository.current_branch()?;
         let current_branch_name = current_branch.name()?;
         let display_branches = ctx.display_branches(current_branch_name)?;

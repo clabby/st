@@ -123,9 +123,8 @@ impl<'a> StContext<'a> {
                 .unwrap_or_default()
             {
                 println!(
-                    "Branch `{}` does not need to be restacked onto {}.",
+                    "Branch `{}` does not need to be restacked.",
                     Green.paint(current_name),
-                    Cyan.paint(parent_name)
                 );
                 continue;
             }

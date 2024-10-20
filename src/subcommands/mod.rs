@@ -2,6 +2,7 @@
 
 use crate::ctx::StContext;
 use clap::Subcommand;
+use remote::SubmitCmd;
 use stack::{CheckoutCmd, CreateCmd, DeleteCmd, LogCmd, RestackCmd, TrackCmd};
 
 mod remote;
@@ -29,20 +30,22 @@ pub enum Subcommands {
     Track(TrackCmd),
     /// Submit the current PR stack to GitHub.
     #[clap(visible_aliases = ["s", "ss"])]
-    Submit(remote::SubmitCmd),
+    Submit(SubmitCmd),
 }
 
 impl Subcommands {
     /// Run the subcommand with the given store.
-    pub async fn run(self, store: StContext<'_>) -> anyhow::Result<()> {
+    pub async fn run(self, ctx: StContext<'_>) -> anyhow::Result<()> {
         match self {
-            Self::Checkout(args) => args.run(store),
-            Self::Restack(args) => args.run(store),
-            Self::Create(args) => args.run(store),
-            Self::Delete(args) => args.run(store),
-            Self::Log(args) => args.run(store),
-            Self::Track(args) => args.run(store),
-            Self::Submit(args) => args.run(store).await,
+            // Local
+            Self::Checkout(args) => args.run(ctx),
+            Self::Restack(args) => args.run(ctx),
+            Self::Create(args) => args.run(ctx),
+            Self::Delete(args) => args.run(ctx),
+            Self::Log(args) => args.run(ctx),
+            Self::Track(args) => args.run(ctx),
+            // Remote
+            Self::Submit(args) => args.run(ctx).await,
         }
     }
 }
