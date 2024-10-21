@@ -1612,6 +1612,7 @@ dependencies = [
  "nu-ansi-term",
  "octocrab",
  "serde",
+ "thiserror",
  "tokio",
  "toml",
 ]

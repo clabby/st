@@ -1,10 +1,12 @@
 //! Utilities for interacting with `git` repositories for the `st` application.
 
 use crate::constants::QUOTE_CHAR;
-use anyhow::{anyhow, bail, Result};
-use git2::{build::CheckoutBuilder, Branch, BranchType, Repository, StatusOptions};
+use git2::{
+    build::CheckoutBuilder, Branch, BranchType, ErrorClass, ErrorCode, Repository, StatusOptions,
+};
 use nu_ansi_term::Color::Red;
 use std::{env, process::Command};
+use thiserror::Error;
 
 /// Returns the repository for the current working directory, and [None] if
 /// the current working directory is not within a git repository or an error
@@ -20,13 +22,19 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<Branch>` - The current [Branch], or an error.
-    fn current_branch(&self) -> Result<Branch>;
+    fn current_branch(&self) -> Result<Branch, git2::Error>;
 
     /// Returns the name of the current [Branch].
     ///
     /// ## Returns
     /// - `Result<String>` - The name of the current branch, or an error.
-    fn current_branch_name(&self) -> Result<String>;
+    fn current_branch_name(&self) -> Result<String, git2::Error>;
+
+    /// Returns whether or not the working tree is clean.
+    ///
+    /// ## Returns
+    /// - `Result<bool>` - True if the working tree is clean, false otherwise.
+    fn is_working_tree_clean(&self) -> Result<bool, git2::Error>;
 
     /// Checks out a branch with the given `branch_name`.
     ///
@@ -36,7 +44,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
-    fn checkout_branch(&self, branch_name: &str) -> Result<()>;
+    fn checkout_branch(&self, branch_name: &str) -> Result<(), git2::Error>;
 
     /// Rebases a branch onto another branch.
     ///
@@ -46,7 +54,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
-    fn rebase_branch_onto(&self, branch_name: &str, onto: &str) -> Result<()>;
+    fn rebase_branch_onto(&self, branch_name: &str, onto: &str) -> Result<(), GitCommandError>;
 
     /// Pushes a branch to a registered remote.
     ///
@@ -56,7 +64,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
-    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()>;
+    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError>;
 
     /// Returns whether the local branch is ahead of the remote branch.
     ///
@@ -65,32 +73,39 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<bool>` - Whether the local branch is ahead of the remote branch.
-    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool>;
+    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool, git2::Error>;
 }
 
 impl RepositoryExt for Repository {
-    fn current_branch(&self) -> Result<Branch> {
+    fn current_branch(&self) -> Result<Branch, git2::Error> {
         let head = self.head()?;
         let branch = self.find_branch(
             head.name()
-                .ok_or(anyhow!("HEAD ref does not have a name"))?
+                .ok_or(git2::Error::new(
+                    ErrorCode::GenericError,
+                    ErrorClass::Object,
+                    "HEAD name not found",
+                ))?
                 .trim_start_matches("refs/heads/"),
             BranchType::Local,
         )?;
         Ok(branch)
     }
 
-    fn current_branch_name(&self) -> Result<String> {
+    fn current_branch_name(&self) -> Result<String, git2::Error> {
         let branch = self.current_branch()?;
         branch
             .name()?
-            .ok_or(anyhow!("Branch name not found"))
+            .ok_or(git2::Error::new(
+                ErrorCode::GenericError,
+                ErrorClass::Object,
+                "Branch name not found",
+            ))
             .map(|n| n.to_string())
     }
 
-    fn checkout_branch(&self, branch_name: &str) -> Result<()> {
+    fn is_working_tree_clean(&self) -> Result<bool, git2::Error> {
         // Check if the working tree is clean
-        // Configure status options
         let mut status_opts = StatusOptions::new();
         status_opts
             .include_untracked(true) // Count untracked files
@@ -99,30 +114,32 @@ impl RepositoryExt for Repository {
             .exclude_submodules(false) // Include submodules
             .recurse_untracked_dirs(true); // Look in untracked directories
         let statuses = self.statuses(Some(&mut status_opts))?;
-        if !statuses.is_empty() {
-            bail!(
-                "Working tree is not clean. Commit or stash changes before checking out a branch."
-            );
-        }
+        Ok(statuses.is_empty())
+    }
 
+    fn checkout_branch(&self, branch_name: &str) -> Result<(), git2::Error> {
         self.set_head(format!("refs/heads/{}", branch_name).as_str())?;
         self.checkout_head(Some(CheckoutBuilder::new().force()))?;
 
         Ok(())
     }
 
-    fn rebase_branch_onto(&self, branch_name: &str, onto_name: &str) -> Result<()> {
+    fn rebase_branch_onto(
+        &self,
+        branch_name: &str,
+        onto_name: &str,
+    ) -> Result<(), GitCommandError> {
         // Check out the branch to rebase.
         self.checkout_branch(branch_name)?;
 
         execute_git_command(&["rebase", onto_name], false)
     }
 
-    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()> {
+    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError> {
         execute_git_command(&["push", remote_name, branch_name], false)
     }
 
-    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool> {
+    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool, git2::Error> {
         // Get the local branch
         let local_branch = self.find_branch(branch_name, BranchType::Local)?;
 
@@ -143,18 +160,35 @@ impl RepositoryExt for Repository {
     }
 }
 
+/// Error type for git command execution.
+#[derive(Error, Debug)]
+pub enum GitCommandError {
+    /// An error occurred while executing a git command.
+    #[error("Error executing git command:\n{}", .0)]
+    Command(String),
+    /// An IO error occurred.
+    #[error("IO error: {}", .0)]
+    IO(#[from] std::io::Error),
+    /// A git2 error occurred.
+    #[error("libgit2 error: {}", .0)]
+    Git2(#[from] git2::Error),
+}
+
 /// Executes a `git` command with the given arguments in a blocking child task.
 ///
 /// ## Takes
 /// - `args` - The arguments to pass to the `git` command.
 /// - `interactive` - Whether the command should be interactive.
-fn execute_git_command(args: &[&str], interactive: bool) -> Result<()> {
+fn execute_git_command(args: &[&str], interactive: bool) -> Result<(), GitCommandError> {
     let mut cmd = Command::new("git");
     if interactive {
         let status = cmd.args(args).status()?;
 
         if !status.success() {
-            bail!("Error executing git operation.");
+            return Err(GitCommandError::Command(format!(
+                "-> Command: `git {}`",
+                args.join(" ")
+            )));
         }
     } else {
         let output = cmd.args(args).output()?;
@@ -166,10 +200,9 @@ fn execute_git_command(args: &[&str], interactive: bool) -> Result<()> {
                 .replace("error: ", "");
 
             let error_message = format!("{} Git error:\n{} {}", QUOTE_CHAR, QUOTE_CHAR, git_error);
-            bail!(
-                "Error executing git operation.\n\n{}",
-                Red.paint(error_message)
-            );
+            return Err(GitCommandError::Command(
+                Red.paint(error_message).to_string(),
+            ));
         }
     }
 

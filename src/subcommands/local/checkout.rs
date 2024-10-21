@@ -36,6 +36,8 @@ impl CheckoutCmd {
             );
         }
 
-        ctx.repository.checkout_branch(branch_name.as_str())
+        ctx.repository
+            .checkout_branch(branch_name.as_str())
+            .map_err(Into::into)
     }
 }

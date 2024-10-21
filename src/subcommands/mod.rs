@@ -40,7 +40,7 @@ impl Subcommands {
         match self {
             // Local
             Self::Create(args) => args.run(ctx),
-            Self::Delete(args) => args.run(ctx),
+            Self::Delete(args) => args.run(ctx).await,
             Self::Log(args) => args.run(ctx),
             Self::Checkout(args) => args.run(ctx),
             Self::Restack(args) => args.run(ctx),

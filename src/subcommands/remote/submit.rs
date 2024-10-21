@@ -1,6 +1,6 @@
 //! `submit` subcommand.
 
-use crate::{ctx::StContext, git::RepositoryExt, tree::RemoteMetadata};
+use crate::{actions::Action, ctx::StContext, git::RepositoryExt, tree::RemoteMetadata};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use git2::BranchType;
@@ -25,6 +25,7 @@ impl SubmitCmd {
             .to_string();
         let gh_client = Octocrab::builder().personal_token(token.clone()).build()?;
         let (owner, repo) = ctx.owner_and_repository()?;
+        let pulls = gh_client.pulls(&owner, &repo);
 
         // Resolve the active stack.
         let stack = ctx.discover_stack()?;
@@ -44,6 +45,39 @@ impl SubmitCmd {
         }
 
         // Check if any PRs have been closed, and offer to delete them before starting the submission process.
+        for branch in stack.iter().skip(1) {
+            let tracked_branch = ctx
+                .tree
+                .get(branch)
+                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
+
+            if let Some(remote_meta) = tracked_branch.remote.as_ref() {
+                let remote_pr = pulls.get(remote_meta.pr_number).await?;
+                let pr_state = remote_pr.state.ok_or(anyhow!("PR not found."))?;
+
+                if matches!(pr_state, IssueState::Closed) {
+                    let confirm = inquire::Confirm::new(
+                        format!(
+                            "Pull request for branch `{}` is {}. Would you like to delete the local branch?",
+                            Color::Green.paint(branch),
+                            Color::Red.bold().paint("closed")
+                        )
+                        .as_str(),
+                    )
+                    .with_default(false)
+                    .prompt()?;
+
+                    if confirm {
+                        Action::DeleteBranch {
+                            branch_name: branch,
+                            must_delete_from_tree: true,
+                        }
+                        .dispatch(&mut ctx)
+                        .await?;
+                    }
+                }
+            }
+        }
 
         // Iterate over the stack and submit PRs.
         for (i, branch) in stack.iter().enumerate().skip(1) {
@@ -58,39 +92,7 @@ impl SubmitCmd {
                 // If the PR has already been submitted.
 
                 // Grab remote metadata for the pull request.
-                let pulls = gh_client.pulls(&owner, &repo);
                 let remote_pr = pulls.get(remote_meta.pr_number).await?;
-                let pr_state = remote_pr.state.ok_or(anyhow!("PR not found."))?;
-
-                // Check if the PR is closed.
-                if matches!(pr_state, IssueState::Closed) {
-                    let confirm = inquire::Confirm::new(
-                        format!(
-                            "Pull request for branch `{}` is {}. Would you like to delete the local branch?",
-                            Color::Green.paint(branch),
-                            Color::Red.bold().paint("closed")
-                        )
-                        .as_str(),
-                    )
-                    .with_default(false)
-                    .prompt()?;
-
-                    // Delete the branch if the user confirms.
-                    if confirm {
-                        ctx.repository
-                            .checkout_branch(ctx.tree.trunk_name.as_str())?;
-                        ctx.repository
-                            .find_branch(branch, BranchType::Local)?
-                            .delete()?;
-                    }
-
-                    // Delete the branch from the stack tree.
-                    ctx.tree.delete(&branch).ok_or(anyhow!(
-                        "Failed to delete branch `{}` from local `st` tree.",
-                        branch
-                    ))?;
-                    continue;
-                }
 
                 // Check if the PR base needs to be updated
                 if remote_pr

@@ -11,6 +11,7 @@ mod ctx;
 mod git;
 mod tree;
 mod subcommands;
+mod actions;
 
 #[tokio::main]
 async fn main() -> Result<()> {
