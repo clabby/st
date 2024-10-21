@@ -2,7 +2,7 @@
 
 use crate::constants::QUOTE_CHAR;
 use anyhow::{anyhow, bail, Result};
-use git2::{build::CheckoutBuilder, Branch, BranchType, Repository};
+use git2::{build::CheckoutBuilder, Branch, BranchType, Repository, StatusOptions};
 use nu_ansi_term::Color::Red;
 use std::{env, process::Command};
 
@@ -89,6 +89,22 @@ impl RepositoryExt for Repository {
     }
 
     fn checkout_branch(&self, branch_name: &str) -> Result<()> {
+        // Check if the working tree is clean
+        // Configure status options
+        let mut status_opts = StatusOptions::new();
+        status_opts
+            .include_untracked(true) // Count untracked files
+            .include_ignored(false) // Don't count ignored files
+            .include_unmodified(false) // Don't include unmodified files
+            .exclude_submodules(false) // Include submodules
+            .recurse_untracked_dirs(true); // Look in untracked directories
+        let statuses = self.statuses(Some(&mut status_opts))?;
+        if !statuses.is_empty() {
+            bail!(
+                "Working tree is not clean. Commit or stash changes before checking out a branch."
+            );
+        }
+
         self.set_head(format!("refs/heads/{}", branch_name).as_str())?;
         self.checkout_head(Some(CheckoutBuilder::new().force()))?;
 

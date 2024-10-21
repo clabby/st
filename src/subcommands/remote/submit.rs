@@ -54,17 +54,6 @@ impl SubmitCmd {
             if let Some(remote_meta) = tracked_branch.remote.as_ref() {
                 // If the PR has already been submitted.
 
-                // Check if the local branch is ahead of the remote.
-                // TODO: Check actual remote ref from the API.
-                let is_ahead = ctx.repository.is_ahead_of_remote(branch)?;
-                if !is_ahead {
-                    println!(
-                        "Branch `{}` is up-to-date with the remote. Skipping submission.",
-                        Color::Green.paint(branch)
-                    );
-                    continue;
-                }
-
                 // Grab remote metadata for the pull request.
                 let pulls = gh_client.pulls(&owner, &repo);
                 let remote_pr = pulls.get(remote_meta.pr_number).await?;
@@ -100,9 +89,6 @@ impl SubmitCmd {
                     continue;
                 }
 
-                // Push the branch to the remote.
-                ctx.repository.push_branch(branch, "origin")?;
-
                 // Check if the PR base needs to be updated
                 if remote_pr
                     .base
@@ -111,16 +97,38 @@ impl SubmitCmd {
                     .map(|base_name| base_name != parent)
                     .unwrap_or_default()
                 {
-                    // Rebase the branch onto the new parent.
-                    ctx.repository.rebase_branch_onto(branch, parent)?;
-
                     // Update the PR base.
                     pulls
                         .update(remote_meta.pr_number)
                         .base(parent)
                         .send()
                         .await?;
+                    println!(
+                        "-> Updated base branch for pull request for branch `{}` to `{}`.",
+                        Color::Green.paint(branch),
+                        Color::Yellow.paint(parent)
+                    );
                 }
+
+                // Check if the local branch is ahead of the remote.
+                let remote_synced = remote_pr.head.sha
+                    == ctx
+                        .repository
+                        .find_branch(branch, BranchType::Local)?
+                        .get()
+                        .target()
+                        .ok_or(anyhow!("Failed to get target of local branch."))?
+                        .to_string();
+                if remote_synced {
+                    println!(
+                        "Branch `{}` is up-to-date with the remote. Skipping push.",
+                        Color::Green.paint(branch)
+                    );
+                    continue;
+                }
+
+                // Push the branch to the remote.
+                ctx.repository.push_branch(branch, "origin")?;
             } else {
                 // If the PR has not been submitted yet.
 
