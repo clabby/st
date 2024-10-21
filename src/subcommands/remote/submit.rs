@@ -95,6 +95,7 @@ impl SubmitCmd {
                 let remote_pr = pulls.get(remote_meta.pr_number).await?;
 
                 // Check if the PR base needs to be updated
+                dbg!(&remote_pr.base);
                 if remote_pr
                     .base
                     .label
@@ -134,6 +135,12 @@ impl SubmitCmd {
 
                 // Push the branch to the remote.
                 ctx.repository.push_branch(branch, "origin")?;
+
+                // Print success message.
+                println!(
+                    "Updated branch `{}` on remote.",
+                    Color::Green.paint(branch)
+                );
             } else {
                 // If the PR has not been submitted yet.
 
@@ -287,3 +294,4 @@ struct PRCreationMetadata {
     /// Whether or not the pull request is a draft.
     is_draft: bool,
 }
+
