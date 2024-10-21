@@ -29,10 +29,11 @@ impl SubmitCmd {
         // Resolve the active stack.
         let stack = ctx.discover_stack()?;
 
-        // Return early if the stack is not clean.
+        // Return early if the stack is not restacked or the working tree is dirty.
         if stack
             .iter()
             .any(|branch| ctx.needs_restack(branch).unwrap_or_default())
+            || !ctx.repository.is_working_tree_clean()?
         {
             println!(
                 "Stack is {}. Please restack with `{}` before submitting.",
@@ -41,6 +42,8 @@ impl SubmitCmd {
             );
             return Ok(());
         }
+
+        // Check if any PRs have been closed, and offer to delete them before starting the submission process.
 
         // Iterate over the stack and submit PRs.
         for (i, branch) in stack.iter().enumerate().skip(1) {
