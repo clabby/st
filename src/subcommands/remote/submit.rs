@@ -4,7 +4,11 @@ use crate::{ctx::StContext, git::RepositoryExt, tree::RemoteMetadata};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use nu_ansi_term::Color;
-use octocrab::{issues::IssueHandler, models::CommentId, Octocrab};
+use octocrab::{
+    issues::IssueHandler,
+    models::{CommentId, IssueState},
+    Octocrab,
+};
 use std::env;
 
 /// CLI arguments for the `submit` subcommand.
@@ -24,6 +28,20 @@ impl SubmitCmd {
         // Resolve the active stack.
         let stack = ctx.discover_stack()?;
 
+        // Return early if the stack is not clean.
+        if stack
+            .iter()
+            .any(|branch| ctx.needs_restack(branch).unwrap_or_default())
+        {
+            println!(
+                "Stack is {}. Please restack with `{}` before submitting.",
+                Color::Red.bold().paint("dirty"),
+                Color::Blue.paint("st restack")
+            );
+            return Ok(());
+        }
+
+        // Iterate over the stack and submit PRs.
         for (i, branch) in stack.iter().enumerate().skip(1) {
             let parent = &stack[i - 1];
 
@@ -36,6 +54,7 @@ impl SubmitCmd {
                 // If the PR has already been submitted.
 
                 // Check if the local branch is ahead of the remote.
+                // TODO: Check actual remote ref from the API.
                 let is_ahead = ctx.repository.is_ahead_of_remote(branch)?;
                 if !is_ahead {
                     println!(
@@ -45,12 +64,26 @@ impl SubmitCmd {
                     continue;
                 }
 
-                // Push the branch to the remote.
-                ctx.repository.push_branch(branch, "origin")?;
-
                 // Grab remote metadata for the pull request.
                 let pulls = gh_client.pulls(&owner, &repo);
                 let remote_pr = pulls.get(remote_meta.pr_number).await?;
+                let pr_state = remote_pr.state.ok_or(anyhow!("PR not found."))?;
+
+                // Check if the PR is closed.
+                if matches!(pr_state, IssueState::Closed) {
+                    println!(
+                        "Pull request for branch `{}` is {}.",
+                        Color::Green.paint(branch),
+                        Color::Red.bold().paint("closed")
+                    );
+
+                    // TODO: Prompt for deletion of local branch.
+
+                    continue;
+                }
+
+                // Push the branch to the remote.
+                ctx.repository.push_branch(branch, "origin")?;
 
                 // Check if the PR base needs to be updated
                 if remote_pr
