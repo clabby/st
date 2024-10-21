@@ -183,7 +183,7 @@ impl SubmitCmd {
         stack: &[String],
     ) -> Result<String> {
         let mut comment = String::new();
-        comment.push_str("## 📚 $\text{Stack Overview}$\n\n");
+        comment.push_str("## 📚 $\\text{Stack Overview}$\n\n");
         comment.push_str("Pulls submitted in this stack:\n");
 
         // Display all branches in the stack.
