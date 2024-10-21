@@ -4,7 +4,7 @@ use crate::{ctx::StContext, git::RepositoryExt, tree::RemoteMetadata};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use nu_ansi_term::Color;
-use octocrab::{issues::IssueHandler, pulls::PullRequestHandler, Octocrab};
+use octocrab::{issues::IssueHandler, models::CommentId, Octocrab};
 use std::env;
 
 /// CLI arguments for the `submit` subcommand.
@@ -32,8 +32,44 @@ impl SubmitCmd {
                 .get_mut(branch)
                 .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
 
-            if let Some(_) = tracked_branch.remote.as_ref() {
+            if let Some(remote_meta) = tracked_branch.remote.as_ref() {
                 // If the PR has already been submitted.
+
+                // Check if the local branch is ahead of the remote.
+                let is_ahead = ctx.repository.is_ahead_of_remote(branch)?;
+                if !is_ahead {
+                    println!(
+                        "Branch `{}` is up-to-date with the remote. Skipping submission.",
+                        Color::Green.paint(branch)
+                    );
+                    continue;
+                }
+
+                // Push the branch to the remote.
+                ctx.repository.push_branch(branch, "origin")?;
+
+                // Grab remote metadata for the pull request.
+                let pulls = gh_client.pulls(&owner, &repo);
+                let remote_pr = pulls.get(remote_meta.pr_number).await?;
+
+                // Check if the PR base needs to be updated
+                if remote_pr
+                    .base
+                    .label
+                    .as_ref()
+                    .map(|base_name| base_name != parent)
+                    .unwrap_or_default()
+                {
+                    // Rebase the branch onto the new parent.
+                    ctx.repository.rebase_branch_onto(branch, parent)?;
+
+                    // Update the PR base.
+                    pulls
+                        .update(remote_meta.pr_number)
+                        .base(parent)
+                        .send()
+                        .await?;
+                }
             } else {
                 // If the PR has not been submitted yet.
 
@@ -72,39 +108,6 @@ impl SubmitCmd {
         Self::update_pr_comments(&mut ctx, gh_client.issues(owner, repo), &stack).await
     }
 
-    /// Updates the comments on a PR with the current stack information.
-    async fn update_pr_comments(
-        ctx: &mut StContext<'_>,
-        issue_handler: IssueHandler<'_>,
-        stack: &[String],
-    ) -> Result<()> {
-        for branch in stack.iter().skip(1) {
-            // Check if the pull request has a comment from `st`.
-            let tracked_branch = ctx
-                .tree
-                .get_mut(branch)
-                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
-
-            let Some(remote_meta) = tracked_branch.remote.as_mut() else {
-                continue;
-            };
-
-            match remote_meta.comment_id {
-                Some(_) => {
-                    // Update the existing comment.
-                }
-                None => {
-                    // Create a new comment.
-                    let comment_info = issue_handler
-                        .create_comment(remote_meta.pr_number, "Test!")
-                        .await?;
-                    remote_meta.comment_id = Some(comment_info.id.0)
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Prompts the user for metadata about the PR during the initial submission process.
     fn prompt_pr_metadata(branch_name: &str, parent_name: &str) -> Result<PRCreationMetadata> {
         let title = inquire::Text::new(
@@ -126,15 +129,86 @@ impl SubmitCmd {
         })
     }
 
-    // /// Renders the PR comment body for the current stack.
-    // fn render_pr_comment(current_branch: &str, stack: &[String]) -> String {
-    //     let mut comment = String::new();
-    //     comment.push_str("### 📚 Stack Status\n\n");
-    //     for branch in stack.iter().rev() {
-    //         comment.push_str(&format!("* "))
-    //     }
-    //     comment
-    // }
+    /// Updates the comments on a PR with the current stack information.
+    async fn update_pr_comments(
+        ctx: &mut StContext<'_>,
+        issue_handler: IssueHandler<'_>,
+        stack: &[String],
+    ) -> Result<()> {
+        for branch in stack.iter().skip(1) {
+            let tracked_branch = ctx
+                .tree
+                .get_mut(branch)
+                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
+
+            // Skip branches that are not submitted as PRs.
+            let Some(remote_meta) = tracked_branch.remote else {
+                continue;
+            };
+
+            // If the PR has been submitted, update the comment.
+            // If the PR is new, create a new comment.
+            let rendered_comment = Self::render_pr_comment(ctx, &branch, stack)?;
+            match remote_meta.comment_id {
+                Some(id) => {
+                    // Update the existing comment.
+                    issue_handler
+                        .update_comment(CommentId(id), rendered_comment)
+                        .await?;
+                }
+                None => {
+                    // Create a new comment.
+                    let comment_info = issue_handler
+                        .create_comment(remote_meta.pr_number, rendered_comment)
+                        .await?;
+
+                    // Get a new mutable reference to the branch and update the comment ID.
+                    ctx.tree
+                        .get_mut(branch)
+                        .expect("Must exist")
+                        .remote
+                        .as_mut()
+                        .expect("Must exist")
+                        .comment_id = Some(comment_info.id.0);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Renders the PR comment body for the current stack.
+    fn render_pr_comment(
+        ctx: &StContext<'_>,
+        current_branch: &str,
+        stack: &[String],
+    ) -> Result<String> {
+        let mut comment = String::new();
+        comment.push_str("## 📚 $\text{Stack Overview}$\n\n");
+        comment.push_str("Pulls submitted in this stack:\n");
+
+        // Display all branches in the stack.
+        for branch in stack.iter().skip(1).rev() {
+            let tracked_branch = ctx
+                .tree
+                .get(branch)
+                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
+            if let Some(remote) = tracked_branch.remote {
+                comment.push_str(&format!(
+                    "* #{}{}\n",
+                    remote.pr_number,
+                    (branch == current_branch)
+                        .then_some(" 👈")
+                        .unwrap_or_default()
+                ));
+            }
+        }
+        comment.push_str(format!("* `{}`\n", ctx.tree.trunk_name).as_str());
+
+        comment.push_str(
+            "\n_This comment was automatically generated by [`st`](https://github.com/clabby/st)._",
+        );
+        Ok(comment)
+    }
 }
 
 /// Metadata about pull request creation.

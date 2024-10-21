@@ -57,6 +57,15 @@ pub trait RepositoryExt {
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
     fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()>;
+
+    /// Returns whether the local branch is ahead of the remote branch.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the local branch.
+    ///
+    /// ## Returns
+    /// - `Result<bool>` - Whether the local branch is ahead of the remote branch.
+    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool>;
 }
 
 impl RepositoryExt for Repository {
@@ -95,6 +104,26 @@ impl RepositoryExt for Repository {
 
     fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<()> {
         execute_git_command(&["push", remote_name, branch_name], false)
+    }
+
+    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool> {
+        // Get the local branch
+        let local_branch = self.find_branch(branch_name, BranchType::Local)?;
+
+        // Get the remote tracking branch
+        let upstream = local_branch.upstream()?;
+
+        // Get the commit that local branch points to
+        let local_commit = local_branch.get().peel_to_commit()?;
+
+        // Get the commit that upstream points to
+        let upstream_commit = upstream.get().peel_to_commit()?;
+
+        // Count ahead/behind commits
+        let (ahead, _behind) = self.graph_ahead_behind(local_commit.id(), upstream_commit.id())?;
+
+        // The branch is ahead if there are commits after the merge base
+        Ok(ahead > 0)
     }
 }
 
