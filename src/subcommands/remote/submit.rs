@@ -3,6 +3,7 @@
 use crate::{ctx::StContext, git::RepositoryExt, tree::RemoteMetadata};
 use anyhow::{anyhow, Result};
 use clap::Args;
+use git2::BranchType;
 use nu_ansi_term::Color;
 use octocrab::{
     issues::IssueHandler,
@@ -71,14 +72,31 @@ impl SubmitCmd {
 
                 // Check if the PR is closed.
                 if matches!(pr_state, IssueState::Closed) {
-                    println!(
-                        "Pull request for branch `{}` is {}.",
-                        Color::Green.paint(branch),
-                        Color::Red.bold().paint("closed")
-                    );
+                    let confirm = inquire::Confirm::new(
+                        format!(
+                            "Pull request for branch `{}` is {}. Would you like to delete the local branch?",
+                            Color::Green.paint(branch),
+                            Color::Red.bold().paint("closed")
+                        )
+                        .as_str(),
+                    )
+                    .with_default(false)
+                    .prompt()?;
 
-                    // TODO: Prompt for deletion of local branch.
+                    // Delete the branch if the user confirms.
+                    if confirm {
+                        ctx.repository
+                            .checkout_branch(ctx.tree.trunk_name.as_str())?;
+                        ctx.repository
+                            .find_branch(branch, BranchType::Local)?
+                            .delete()?;
+                    }
 
+                    // Delete the branch from the stack tree.
+                    ctx.tree.delete(&branch).ok_or(anyhow!(
+                        "Failed to delete branch `{}` from local `st` tree.",
+                        branch
+                    ))?;
                     continue;
                 }
 
@@ -138,7 +156,10 @@ impl SubmitCmd {
         }
 
         // Update the comments on the PRs.
-        Self::update_pr_comments(&mut ctx, gh_client.issues(owner, repo), &stack).await
+        Self::update_pr_comments(&mut ctx, gh_client.issues(owner, repo), &stack).await?;
+
+        println!("🧙💫 All pull requests up to date.");
+        Ok(())
     }
 
     /// Prompts the user for metadata about the PR during the initial submission process.
