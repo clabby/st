@@ -183,7 +183,9 @@ impl SubmitCmd {
             .as_str(),
         )
         .prompt()?;
-        let body = inquire::Editor::new("Pull request description").prompt()?;
+        let body = inquire::Editor::new("Pull request description")
+            .with_file_extension(".md")
+            .prompt()?;
         let is_draft = inquire::Confirm::new("Is this PR a draft?").prompt()?;
 
         Ok(PRCreationMetadata {
