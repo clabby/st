@@ -9,6 +9,7 @@ use crate::{
     git::RepositoryExt,
 };
 use anyhow::{anyhow, Result};
+use nu_ansi_term::Color;
 use std::fmt::{Display, Write};
 
 impl<'a> StContext<'a> {
@@ -72,6 +73,10 @@ impl<'a> StContext<'a> {
     ) -> Result<()> {
         // Grab the checked out branch.
         let checked_out = self.repository.current_branch_name()?;
+        let current = self
+            .tree
+            .get(branch)
+            .ok_or(anyhow!("Branch {} not tracked with `st`.", branch))?;
 
         // Form the log-line for the current branch.
         let checked_out_icon = (branch == checked_out)
@@ -84,17 +89,27 @@ impl<'a> StContext<'a> {
                 .needs_restack(branch)?
                 .then_some(" (needs restack)")
                 .unwrap_or("");
-            format!("{}", needs_restack)
+            let pull_request = current
+                .remote
+                .map(|r| {
+                    let (owner, repo) = self.owner_and_repository()?;
+                    Ok::<_, anyhow::Error>(Color::Cyan.italic().paint(format!(
+                        "https://github.com/{}/{}/pull/{}",
+                        owner, repo, r.pr_number
+                    )))
+                })
+                .transpose()?;
+            format!(
+                "{}{}",
+                needs_restack,
+                pull_request.map_or(String::new(), |s| format!(" ({})", s))
+            )
         };
 
         // Write the current branch to the writer.
         write!(w, "{}{}{}\n", prefix, rendered_branch, branch_metadata)?;
 
         // Write the children of the branch recursively.
-        let current = self
-            .tree
-            .get(branch)
-            .ok_or(anyhow!("Branch {} not tracked with `st`.", branch))?;
         let mut children = current.children.iter().peekable();
         while let Some(child) = children.next() {
             // Form the connection between the previous log-line and the current log-line.
@@ -150,3 +165,4 @@ impl Display for DisplayBranch {
         write!(f, "{}", self.display_value)
     }
 }
+
