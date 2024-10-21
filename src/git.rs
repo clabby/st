@@ -136,7 +136,7 @@ impl RepositoryExt for Repository {
     }
 
     fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError> {
-        execute_git_command(&["push", remote_name, branch_name], false)
+        execute_git_command(&["push", remote_name, branch_name, "--force"], false)
     }
 
     fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool, git2::Error> {
