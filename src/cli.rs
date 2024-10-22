@@ -1,7 +1,11 @@
 //! The CLI for `st`.
 
-use crate::{ctx::StContext, git::active_repository, subcommands::Subcommands};
-use anyhow::{anyhow, Result};
+use crate::{
+    config::{StConfig, DEFAULT_CONFIG_PRETTY},
+    ctx::StContext,
+    errors::{StError, StResult},
+    subcommands::Subcommands,
+};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
     ArgAction, Parser,
@@ -9,7 +13,6 @@ use clap::{
 use git2::{BranchType, Repository};
 use inquire::Select;
 use nu_ansi_term::Color::Blue;
-use tracing::Level;
 
 const ABOUT: &str = "st is a CLI application for working with stacked PRs locally and on GitHub.";
 
@@ -27,76 +30,81 @@ pub struct Cli {
 
 impl Cli {
     /// Run the CLI application with the given arguments.
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> StResult<()> {
         // Load the active repository.
-        let repo = active_repository()
-            .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
-        let store = Self::try_load_store(&repo)?;
+        let repo = crate::git::active_repository().ok_or(StError::NotAGitRepository)?;
+        let config = Self::load_cfg_or_initialize()?;
+        let context = Self::load_ctx_or_initialize(config, &repo)?;
 
-        self.subcommand.run(store).await
+        self.subcommand.run(context).await
     }
 
-    /// Loads the [StoreWithRepository] for the given [Repository]. If the store does not exist,
-    /// prompts the user to set up the repository with `st`.
-    ///
-    /// ## Takes
-    /// - `repo` - The repository to load the store for.
+    /// Loads the [StConfig]. If the config does not exist, prompts the user to set up the
+    /// `st` for the first time.
     ///
     /// ## Returns
-    /// - `Result<StoreWithRepository>` - The store for the repository.
-    pub(crate) fn try_load_store<'a>(repo: &'a Repository) -> Result<StContext> {
-        // Attempt to load the repository store, or create a new one if it doesn't exist.
-        let store = StContext::try_load(&repo)?;
-        match store {
-            Some(store) => Ok(store),
+    /// - `Result<StConfig>` - The global `st` config.
+    pub(crate) fn load_cfg_or_initialize() -> StResult<StConfig> {
+        // Load the global configuration for `st`, or initialize it if it doesn't exist.
+        match StConfig::try_load()? {
+            Some(config) => Ok(config),
             None => {
-                let setup_message = format!(
-                    "Repo not configured with `{}`. Select the trunk branch for the repository.",
-                    Blue.paint("st")
-                );
+                let setup_message =
+                    format!("No global configuration found for `st`. Set up the environment.");
 
-                // Ask the user to specify the trunk branch of the repository.
-                let branches = repo
-                    .branches(Some(BranchType::Local))?
-                    .into_iter()
-                    .map(|b| {
-                        let (b, _) = b?;
-                        b.name()?
-                            .map(ToOwned::to_owned)
-                            .ok_or(anyhow!("Branch name invalid."))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let trunk_branch = Select::new(&setup_message, branches).prompt()?;
-
-                // Print the welcome message.
-                println!(
-                    "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
-                    Blue.paint("st")
-                );
-
-                Ok(StContext::fresh(&repo, trunk_branch))
+                // Print the default config.
+                let ser_cfg = inquire::Editor::new(&setup_message)
+                    .with_file_extension(".toml")
+                    .with_predefined_text(&DEFAULT_CONFIG_PRETTY)
+                    .prompt()?;
+                Ok(toml::from_str(&ser_cfg)?)
             }
         }
     }
 
-    /// Initializes the tracing subscriber
+    /// Loads the [StContext] for the given [Repository]. If the context does not exist,
+    /// prompts the user to set up the repository with `st`.
+    ///
+    /// ## Takes
+    /// - `repo` - The repository to load the context for.
     ///
     /// ## Returns
-    /// - `Result<()>` - Ok if successful, Err otherwise.
-    pub(crate) fn init_tracing_subscriber(self) -> Result<Self> {
-        let subscriber = tracing_subscriber::fmt()
-            .with_max_level(match self.v {
-                0 => Level::ERROR,
-                1 => Level::WARN,
-                2 => Level::INFO,
-                3 => Level::DEBUG,
-                _ => Level::TRACE,
+    /// - `Result<StContext>` - The context for the repository.
+    pub(crate) fn load_ctx_or_initialize<'a>(
+        config: StConfig,
+        repo: &'a Repository,
+    ) -> StResult<StContext<'a>> {
+        // Attempt to load the repository store, or create a new one if it doesn't exist.
+        if let Some(ctx) = StContext::try_load(config.clone(), &repo)? {
+            return Ok(ctx);
+        }
+
+        let setup_message = format!(
+            "Repo not configured with `{}`. Select the trunk branch for the repository.",
+            Blue.paint("st")
+        );
+
+        // Ask the user to specify the trunk branch of the repository.
+        // The trunk branch must be a local branch.
+        let branches = repo
+            .branches(Some(BranchType::Local))?
+            .into_iter()
+            .map(|b| {
+                let (b, _) = b?;
+                b.name()?
+                    .map(ToOwned::to_owned)
+                    .ok_or(StError::BranchUnavailable)
             })
-            .finish();
+            .collect::<StResult<Vec<_>>>()?;
+        let trunk_branch = Select::new(&setup_message, branches).prompt()?;
 
-        tracing::subscriber::set_global_default(subscriber).map_err(|e| anyhow!(e))?;
+        // Print the welcome message.
+        println!(
+            "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
+            Blue.paint("st")
+        );
 
-        Ok(self)
+        Ok(StContext::fresh(config, &repo, trunk_branch))
     }
 }
 

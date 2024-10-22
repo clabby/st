@@ -1,11 +1,13 @@
 //! The subcommands for the `st` application.
 
-use crate::ctx::StContext;
+use crate::{ctx::StContext, errors::StResult};
 use clap::Subcommand;
-use stack::{CheckoutCmd, CreateCmd, DeleteCmd, LogCmd, RestackCmd, TrackCmd};
+
+mod local;
+use local::{CheckoutCmd, CreateCmd, DeleteCmd, LogCmd, RestackCmd, TrackCmd, UntrackCmd};
 
 mod remote;
-mod stack;
+use remote::{SubmitCmd, SyncCmd};
 
 #[derive(Debug, Clone, Eq, PartialEq, Subcommand)]
 pub enum Subcommands {
@@ -27,22 +29,32 @@ pub enum Subcommands {
     /// Track the current branch on top of a tracked stack node.
     #[clap(visible_alias = "tr")]
     Track(TrackCmd),
+    /// Untrack the passed branch.
+    #[clap(visible_alias = "ut")]
+    Untrack(UntrackCmd),
     /// Submit the current PR stack to GitHub.
     #[clap(visible_aliases = ["s", "ss"])]
-    Submit(remote::SubmitCmd),
+    Submit(SubmitCmd),
+    /// Sync the remote branches with the local branches.
+    #[clap(visible_aliases = ["rs", "sy"])]
+    Sync(SyncCmd),
 }
 
 impl Subcommands {
     /// Run the subcommand with the given store.
-    pub async fn run(self, store: StContext<'_>) -> anyhow::Result<()> {
+    pub async fn run(self, ctx: StContext<'_>) -> StResult<()> {
         match self {
-            Self::Checkout(args) => args.run(store),
-            Self::Restack(args) => args.run(store),
-            Self::Create(args) => args.run(store),
-            Self::Delete(args) => args.run(store),
-            Self::Log(args) => args.run(store),
-            Self::Track(args) => args.run(store),
-            Self::Submit(args) => args.run(store).await,
+            // Remote
+            Self::Sync(args) => args.run(ctx).await,
+            Self::Submit(args) => args.run(ctx).await,
+            // Local
+            Self::Create(args) => args.run(ctx),
+            Self::Delete(args) => args.run(ctx),
+            Self::Log(args) => args.run(ctx),
+            Self::Checkout(args) => args.run(ctx),
+            Self::Restack(args) => args.run(ctx),
+            Self::Track(args) => args.run(ctx),
+            Self::Untrack(args) => args.run(ctx),
         }
     }
 }

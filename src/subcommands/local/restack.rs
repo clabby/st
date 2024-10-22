@@ -1,7 +1,6 @@
 //! `restack` subcommand.
 
-use crate::ctx::StContext;
-use anyhow::Result;
+use crate::{ctx::StContext, errors::StResult};
 use clap::Args;
 
 /// CLI arguments for the `restack` subcommand.
@@ -10,7 +9,7 @@ pub struct RestackCmd;
 
 impl RestackCmd {
     /// Run the `restack` subcommand.
-    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
-        ctx.restack_current()
+    pub fn run(self, mut ctx: StContext<'_>) -> StResult<()> {
+        ctx.restack()
     }
 }
