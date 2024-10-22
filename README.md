@@ -27,6 +27,11 @@
 
 ## Installation
 
+> \[!WARNING\]
+> `st` was written on a weekend for my own personal use, and may not be entirely stable. You're welcome to use it
+> in its current state, though don't get mad at me if the tool messes up your local tree. I'll remove this warning once
+> I feel that it's stable for my own usecase.
+
 You can install `st` with:
 
 ```sh
