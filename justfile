@@ -39,4 +39,4 @@ hack:
 
 # Lint the Rust documentation
 lint-docs:
-  RUSTDOCFLAGS="-D warnings" cargo doc --all --no-deps --document-private-items 
+  RUSTDOCFLAGS="-D warnings" cargo doc --all --no-deps --document-private-items

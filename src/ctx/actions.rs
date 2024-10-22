@@ -117,7 +117,7 @@ impl<'a> StContext<'a> {
         // 2. Attempt to delete an untracked branch.
         if branch_name == self.tree.trunk_name {
             return Err(StError::CannotDeleteTrunkBranch);
-        } else if !self.tree.get(&branch_name).is_some() {
+        } else if self.tree.get(branch_name).is_none() {
             return Err(StError::BranchNotTracked(branch_name.to_string()));
         }
 
@@ -135,7 +135,7 @@ impl<'a> StContext<'a> {
         // Exit early if the user doesn't confirm.
         if !confirm {
             if must_delete_from_tree {
-                self.tree.delete(&branch_name)?;
+                self.tree.delete(branch_name)?;
             }
             return Ok(());
         }
@@ -146,11 +146,11 @@ impl<'a> StContext<'a> {
 
         // Delete the selected branch.
         self.repository
-            .find_branch(&branch_name, BranchType::Local)?
+            .find_branch(branch_name, BranchType::Local)?
             .delete()?;
 
         // Delete the selected branch from the stack tree.
-        self.tree.delete(&branch_name)?;
+        self.tree.delete(branch_name)?;
 
         Ok(())
     }

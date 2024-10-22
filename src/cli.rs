@@ -49,13 +49,15 @@ impl Cli {
         match StConfig::try_load()? {
             Some(config) => Ok(config),
             None => {
-                let setup_message =
-                    format!("No global configuration found for `st`. Set up the environment.");
+                let setup_message = format!(
+                    "No global configuration found for `{}`. Set up the environment.",
+                    Blue.paint("st")
+                );
 
                 // Print the default config.
                 let ser_cfg = inquire::Editor::new(&setup_message)
                     .with_file_extension(".toml")
-                    .with_predefined_text(&DEFAULT_CONFIG_PRETTY)
+                    .with_predefined_text(DEFAULT_CONFIG_PRETTY)
                     .prompt()?;
                 Ok(toml::from_str(&ser_cfg)?)
             }
@@ -70,12 +72,12 @@ impl Cli {
     ///
     /// ## Returns
     /// - `Result<StContext>` - The context for the repository.
-    pub(crate) fn load_ctx_or_initialize<'a>(
+    pub(crate) fn load_ctx_or_initialize(
         config: StConfig,
-        repo: &'a Repository,
-    ) -> StResult<StContext<'a>> {
+        repo: &Repository,
+    ) -> StResult<StContext> {
         // Attempt to load the repository store, or create a new one if it doesn't exist.
-        if let Some(ctx) = StContext::try_load(config.clone(), &repo)? {
+        if let Some(ctx) = StContext::try_load(config.clone(), repo)? {
             return Ok(ctx);
         }
 
@@ -88,7 +90,6 @@ impl Cli {
         // The trunk branch must be a local branch.
         let branches = repo
             .branches(Some(BranchType::Local))?
-            .into_iter()
             .map(|b| {
                 let (b, _) = b?;
                 b.name()?
@@ -104,7 +105,7 @@ impl Cli {
             Blue.paint("st")
         );
 
-        Ok(StContext::fresh(config, &repo, trunk_branch))
+        Ok(StContext::fresh(config, repo, trunk_branch))
     }
 }
 

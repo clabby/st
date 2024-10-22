@@ -12,7 +12,7 @@ use crate::{
 use nu_ansi_term::Color;
 use std::fmt::{Display, Write};
 
-impl<'a> StContext<'a> {
+impl StContext<'_> {
     /// Gathers an in-order list of [DisplayBranch]es, containing the log-line and branch name.
     ///
     /// This function is particularly useful when creating prompts with [inquire::Select].
@@ -70,16 +70,19 @@ impl<'a> StContext<'a> {
             .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?;
 
         // Form the log-line for the current branch.
-        let checked_out_icon = (branch == checked_out)
-            .then_some(FILLED_CIRCLE)
-            .unwrap_or(EMPTY_CIRCLE);
+        let checked_out_icon = if branch == checked_out {
+            FILLED_CIRCLE
+        } else {
+            EMPTY_CIRCLE
+        };
         let rendered_branch = COLORS[depth % COLORS.len()]
             .paint(format!("{}{} {}", connection, checked_out_icon, branch));
         let branch_metadata = {
-            let needs_restack = self
-                .needs_restack(branch)?
-                .then_some(" (needs restack)")
-                .unwrap_or("");
+            let needs_restack = if self.needs_restack(branch)? {
+                " (needs restack)"
+            } else {
+                ""
+            };
             let pull_request = current
                 .remote
                 .map(|r| {
@@ -98,7 +101,7 @@ impl<'a> StContext<'a> {
         };
 
         // Write the current branch to the writer.
-        write!(w, "{}{}{}\n", prefix, rendered_branch, branch_metadata)?;
+        writeln!(w, "{}{}{}", prefix, rendered_branch, branch_metadata)?;
 
         // Write the children of the branch recursively.
         let mut children = current.children.iter().peekable();
@@ -107,9 +110,11 @@ impl<'a> StContext<'a> {
             let is_last_child = children.peek().is_none();
             let connection = format!(
                 "{}{}",
-                is_last_child
-                    .then_some(BOTTOM_LEFT_BOX)
-                    .unwrap_or(LEFT_FORK_BOX),
+                if is_last_child {
+                    BOTTOM_LEFT_BOX
+                } else {
+                    LEFT_FORK_BOX
+                },
                 HORIZONTAL_BOX
             );
 

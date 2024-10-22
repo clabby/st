@@ -28,7 +28,7 @@ impl SyncCmd {
 
         // Resolve all branches in the stack tree after the deletions have been applied.
         let branches = ctx.tree.branches()?;
-        let branches_without_trunk = branches.iter().cloned().skip(1).collect::<Vec<_>>();
+        let branches_without_trunk = branches.iter().skip(1).cloned().collect::<Vec<_>>();
 
         // Pull all of the latest changes from GitHub.
         println!(
@@ -58,7 +58,7 @@ impl SyncCmd {
     ) -> StResult<()> {
         // Resolve the active stack.
         let branches = ctx.tree.branches()?;
-        let branches_without_trunk = branches.iter().cloned().skip(1).collect::<Vec<_>>();
+        let branches_without_trunk = branches.iter().skip(1).cloned().collect::<Vec<_>>();
 
         // Return early if the stack is not restacked or the current working tree is dirty.
         if !ctx.repository.is_working_tree_clean()? {

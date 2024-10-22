@@ -62,7 +62,8 @@ impl StackTree {
     ///
     /// ## Takes
     /// - `parent` - The name of the parent branch.
-    /// - `local_metadata` - The [LocalMetadata] for the child branch.
+    /// - `parent_oid_cache` - The [git2::Oid] cache of the parent branch.
+    /// - `branch` - The name of the child branch.
     ///
     /// ## Returns
     /// - `Ok(()` if the child branch was successfully added.)`

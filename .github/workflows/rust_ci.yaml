@@ -1,0 +1,116 @@
+name: Rust CI
+on:
+  push:
+    branches: [main]
+  merge_group:
+  pull_request:
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  cargo-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: taiki-e/install-action@just
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: taiki-e/install-action@nextest
+      - name: cargo test
+        run: just test --locked
+  cargo-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    name: lint
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: taiki-e/install-action@just
+      - name: Install Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: fmt + lint
+        run: just lint
+  cargo-build-benches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    name: build-benchmarks
+    continue-on-error: true
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: taiki-e/install-action@just
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: build benches
+        run: cargo bench --no-run --workspace --all
+  cargo-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    name: build
+    continue-on-error: true
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: taiki-e/install-action@just
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: build
+        run: just build
+  cargo-doc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: taiki-e/install-action@just
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: doclint
+        run: just lint-docs
+      - name: doctest
+        run: just test-docs
+  cargo-hack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: taiki-e/install-action@just
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: cargo hack
+        run: just hack

@@ -32,7 +32,7 @@ impl CheckoutCmd {
         };
 
         // Ensure the provided branch is tracked with `st`.
-        if !ctx.tree.get(&branch_name).is_some() {
+        if ctx.tree.get(&branch_name).is_none() {
             return Err(StError::BranchNotTracked(branch_name));
         }
 

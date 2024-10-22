@@ -26,14 +26,12 @@ impl StConfig {
         match std::fs::read_to_string(&config_path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => Ok(Some(config)),
-                Err(e) => {
-                    return Err(StConfigError::FailedToLoad(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        e,
-                    )))
-                }
+                Err(e) => Err(StConfigError::FailedToLoad(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    e,
+                ))),
             },
-            Err(_) => return Ok(None),
+            Err(_) => Ok(None),
         }
     }
 }

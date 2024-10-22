@@ -100,15 +100,6 @@ pub trait RepositoryExt {
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
     fn pull_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError>;
-
-    /// Returns whether the local branch is ahead of the remote branch.
-    ///
-    /// ## Takes
-    /// - `branch_name` - The name of the local branch.
-    ///
-    /// ## Returns
-    /// - `Result<bool>` - Whether the local branch is ahead of the remote branch.
-    fn ahead_and_behind_upstream(&self, branch_name: &str) -> Result<(usize, usize), git2::Error>;
 }
 
 impl RepositoryExt for Repository {
@@ -213,23 +204,6 @@ impl RepositoryExt for Repository {
     fn pull_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError> {
         self.checkout_branch(branch_name)?;
         execute_git_command(&["pull", remote_name, branch_name], false)
-    }
-
-    fn ahead_and_behind_upstream(&self, branch_name: &str) -> Result<(usize, usize), git2::Error> {
-        // Get the local branch
-        let local_branch = self.find_branch(branch_name, BranchType::Local)?;
-
-        // Get the remote tracking branch
-        let upstream = local_branch.upstream()?;
-
-        // Get the commit that local branch points to
-        let local_commit = local_branch.get().peel_to_commit()?;
-
-        // Get the commit that upstream points to
-        let upstream_commit = upstream.get().peel_to_commit()?;
-
-        // Count ahead/behind commits
-        self.graph_ahead_behind(local_commit.id(), upstream_commit.id())
     }
 }
 

@@ -71,7 +71,7 @@ pub enum StError {
     /// An [octocrab::Error] occurred.
     #[error("🐙 octocrab error: {:?}", .0)]
     OctocrabError(#[from] octocrab::Error),
-    /// An [inquire::Error] occurred.
+    /// An [inquire::InquireError] occurred.
     #[error("🔍 inquire error: {}", .0)]
     InquireError(#[from] inquire::InquireError),
     /// An [std::io::Error] occurred.

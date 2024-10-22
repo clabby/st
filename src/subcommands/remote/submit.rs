@@ -61,12 +61,12 @@ impl SubmitCmd {
         pulls: &mut PullRequestHandler<'_>,
     ) -> StResult<()> {
         // Return early if the stack is not restacked or the current working tree is dirty.
-        ctx.check_cleanliness(&stack)?;
+        ctx.check_cleanliness(stack)?;
 
         // Check if any PRs have been closed, and offer to delete them before starting the submission process.
         let num_closed = ctx
             .delete_closed_branches(
-                stack.iter().cloned().skip(1).collect::<Vec<_>>().as_slice(),
+                stack.iter().skip(1).cloned().collect::<Vec<_>>().as_slice(),
                 pulls,
             )
             .await?;
@@ -201,7 +201,7 @@ impl SubmitCmd {
 
             // If the PR has been submitted, update the comment.
             // If the PR is new, create a new comment.
-            let rendered_comment = Self::render_pr_comment(ctx, &branch, stack)?;
+            let rendered_comment = Self::render_pr_comment(ctx, branch, stack)?;
             match remote_meta.comment_id {
                 Some(id) => {
                     // Update the existing comment.

@@ -8,7 +8,7 @@ use crate::{
 use git2::BranchType;
 use std::collections::VecDeque;
 
-impl<'a> StContext<'a> {
+impl StContext<'_> {
     /// Discovers the current stack, relative to the checked out branch, including the trunk branch.
     ///
     /// The returned stack is ordered from the trunk branch to the tip of the stack.

@@ -21,7 +21,7 @@ mod stack_management;
 /// ## Returns
 /// - `Some(PathBuf)` - The path to the serialized context.
 /// - `None` - If the repository does not have a workdir.
-pub fn ctx_path<'a>(repository: &Repository) -> Option<PathBuf> {
+pub fn ctx_path(repository: &Repository) -> Option<PathBuf> {
     repository
         .workdir()
         .map(|p| p.join(GIT_DIR).join(ST_CTX_FILE_NAME))
@@ -47,9 +47,9 @@ impl<'a> StContext<'a> {
         }
     }
 
-    /// Loads the root [StackNode] for the given [Repository], and assembles a [StoreWithRepository].
+    /// Loads the [StackTree] for the given [Repository], and assembles a [StContext].
     pub fn try_load(cfg: StConfig, repository: &'a Repository) -> StResult<Option<Self>> {
-        let store_path = ctx_path(&repository).ok_or(StError::GitRepositoryRootNotFound)?;
+        let store_path = ctx_path(repository).ok_or(StError::GitRepositoryRootNotFound)?;
 
         // If the store doesn't exist, return None.
         if !store_path.exists() {
@@ -84,7 +84,7 @@ impl<'a> StContext<'a> {
                 ))?
                 .split('/')
                 .collect::<Vec<_>>();
-            let org = repo_parts.get(0).ok_or(StError::DecodingError(
+            let org = repo_parts.first().ok_or(StError::DecodingError(
                 "Organization not found.".to_string(),
             ))?;
             let repo = repo_parts.get(1).ok_or(StError::DecodingError(
@@ -97,7 +97,7 @@ impl<'a> StContext<'a> {
             let org = parts.get(parts.len() - 2).ok_or(StError::DecodingError(
                 "Organization not found.".to_string(),
             ))?;
-            let repo = parts.get(parts.len() - 1).ok_or(StError::DecodingError(
+            let repo = parts.last().ok_or(StError::DecodingError(
                 "Repository not found while decoding remote URL.".to_string(),
             ))?;
             (org.to_string(), repo.trim_end_matches(".git").to_string())
@@ -114,7 +114,7 @@ impl<'a> StContext<'a> {
     fn prune(&mut self) -> StResult<()> {
         let branches = self.tree.branches()?;
         branches.iter().try_for_each(|b| {
-            if !self.repository.find_branch(b, BranchType::Local).is_ok() {
+            if self.repository.find_branch(b, BranchType::Local).is_err() {
                 self.tree.delete(b)?;
             }
             Ok::<_, StError>(())
@@ -122,10 +122,10 @@ impl<'a> StContext<'a> {
     }
 }
 
-impl<'a> Drop for StContext<'a> {
+impl Drop for StContext<'_> {
     fn drop(&mut self) {
         // Persist the store on drop.
-        let store_path = ctx_path(&self.repository).expect("Failed to get context path.");
+        let store_path = ctx_path(self.repository).expect("Failed to get context path.");
         let store = toml::to_string_pretty(&self.tree).expect("Failed to serialize context.");
         std::fs::write(store_path, store).expect("Failed to persist context to disk.");
     }
