@@ -69,7 +69,7 @@ pub enum StError {
     #[error(transparent)]
     GitCommandError(#[from] GitCommandError),
     /// An [octocrab::Error] occurred.
-    #[error("🐙 octocrab error: {}", .0)]
+    #[error("🐙 octocrab error: {:?}", .0)]
     OctocrabError(#[from] octocrab::Error),
     /// An [inquire::Error] occurred.
     #[error("🔍 inquire error: {}", .0)]

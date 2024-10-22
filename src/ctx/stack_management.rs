@@ -6,7 +6,6 @@ use crate::{
     git::RepositoryExt,
 };
 use git2::BranchType;
-use nu_ansi_term::Color;
 use std::collections::VecDeque;
 
 impl<'a> StContext<'a> {
@@ -93,36 +92,7 @@ impl<'a> StContext<'a> {
 
         // Rebase each branch onto its parent.
         for (i, branch) in stack.iter().enumerate().skip(1) {
-            // Skip branches that do not need to be restacked.
-            if !self.needs_restack(branch)? {
-                println!(
-                    "Branch `{}` does not need to be restacked onto `{}`.",
-                    Color::Green.paint(branch),
-                    Color::Yellow.paint(&stack[i - 1])
-                );
-                continue;
-            }
-
-            // Rebase the branch onto its parent.
-            self.repository.rebase_branch_onto(branch, &stack[i - 1])?;
-
-            // Update the parent oid cache.
-            let parent_oid = self
-                .repository
-                .find_branch(&stack[i - 1], BranchType::Local)?
-                .get()
-                .target()
-                .ok_or(StError::MissingParentOidCache)?;
-            self.tree
-                .get_mut(branch)
-                .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?
-                .parent_oid_cache = Some(parent_oid.to_string());
-
-            println!(
-                "Restacked branch `{}` onto `{}`.",
-                Color::Green.paint(branch),
-                Color::Yellow.paint(&stack[i - 1])
-            );
+            self.restack_branch(branch, &stack[i - 1])?;
         }
 
         Ok(())

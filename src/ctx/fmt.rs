@@ -84,7 +84,7 @@ impl<'a> StContext<'a> {
                 .remote
                 .map(|r| {
                     let (owner, repo) = self.owner_and_repository()?;
-                    Ok::<_, StError>(Color::Cyan.italic().paint(format!(
+                    Ok::<_, StError>(Color::Purple.italic().paint(format!(
                         "https://github.com/{}/{}/pull/{}",
                         owner, repo, r.pr_number
                     )))

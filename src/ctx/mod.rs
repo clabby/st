@@ -6,7 +6,7 @@ use crate::{
     errors::{StError, StResult},
     tree::StackTree,
 };
-use git2::Repository;
+use git2::{BranchType, Repository};
 use std::path::PathBuf;
 
 mod actions;
@@ -57,11 +57,12 @@ impl<'a> StContext<'a> {
         }
 
         let stack: StackTree = toml::from_str(&std::fs::read_to_string(store_path)?)?;
-        let store_with_repo = Self {
+        let mut store_with_repo = Self {
             cfg,
             repository,
             tree: stack,
         };
+        store_with_repo.prune()?;
 
         Ok(Some(store_with_repo))
     }
@@ -107,6 +108,17 @@ impl<'a> StContext<'a> {
         };
 
         Ok((org, repo))
+    }
+
+    /// Prunes branches in the context that no longer exist in the git repository.
+    fn prune(&mut self) -> StResult<()> {
+        let branches = self.tree.branches()?;
+        branches.iter().try_for_each(|b| {
+            if !self.repository.find_branch(b, BranchType::Local).is_ok() {
+                self.tree.delete(b)?;
+            }
+            Ok::<_, StError>(())
+        })
     }
 }
 

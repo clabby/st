@@ -17,3 +17,6 @@ pub use restack::RestackCmd;
 
 mod track;
 pub use track::TrackCmd;
+
+mod untrack;
+pub use untrack::UntrackCmd;

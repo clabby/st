@@ -9,11 +9,15 @@ use crate::{
 use clap::Args;
 use git2::BranchType;
 use nu_ansi_term::Color;
-use octocrab::{issues::IssueHandler, models::CommentId, Octocrab};
+use octocrab::{issues::IssueHandler, models::CommentId, pulls::PullRequestHandler, Octocrab};
 
 /// CLI arguments for the `submit` subcommand.
 #[derive(Debug, Clone, Eq, PartialEq, Args)]
-pub struct SubmitCmd;
+pub struct SubmitCmd {
+    /// Force the submission of the stack, analogous to `git push --force`.
+    #[clap(long, short)]
+    force: bool,
+}
 
 impl SubmitCmd {
     /// Run the `submit` subcommand.
@@ -28,11 +32,66 @@ impl SubmitCmd {
         // Resolve the active stack.
         let stack = ctx.discover_stack()?;
 
+        // Perform pre-flight checks.
+        println!("🔍 Checking for closed pull requests...");
+        self.pre_flight(&mut ctx, &stack, &mut pulls).await?;
+
+        // Submit the stack.
+        println!(
+            "\n🐙 Submitting changes to remote `{}`...",
+            Color::Blue.paint("origin")
+        );
+        self.submit_stack(&mut ctx, &mut pulls, &owner, &repo)
+            .await?;
+
+        // Update the stack navigation comments on the PRs.
+        println!("\n📝 Updating stack navigation comments...");
+        self.update_pr_comments(&mut ctx, gh_client.issues(owner, repo), &stack)
+            .await?;
+
+        println!("\n🧙💫 All pull requests up to date.");
+        Ok(())
+    }
+
+    /// Performs pre-flight checks before submitting the stack.
+    async fn pre_flight(
+        &self,
+        ctx: &mut StContext<'_>,
+        stack: &[String],
+        pulls: &mut PullRequestHandler<'_>,
+    ) -> StResult<()> {
         // Return early if the stack is not restacked or the current working tree is dirty.
         ctx.check_cleanliness(&stack)?;
 
         // Check if any PRs have been closed, and offer to delete them before starting the submission process.
-        ctx.delete_closed_branches(&stack, &mut pulls).await?;
+        let num_closed = ctx
+            .delete_closed_branches(
+                stack.iter().cloned().skip(1).collect::<Vec<_>>().as_slice(),
+                pulls,
+            )
+            .await?;
+
+        if num_closed > 0 {
+            println!(
+                "Deleted {} closed pull request{}. Run `{}` to re-stack the branches.",
+                Color::Red.paint(num_closed.to_string()),
+                (num_closed != 1).then_some("s").unwrap_or_default(),
+                Color::Blue.paint("st restack")
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Submits the stack of branches to GitHub.
+    async fn submit_stack(
+        &self,
+        ctx: &mut StContext<'_>,
+        pulls: &mut PullRequestHandler<'_>,
+        owner: &str,
+        repo: &str,
+    ) -> StResult<()> {
+        let stack = ctx.discover_stack()?;
 
         // Iterate over the stack and submit PRs.
         for (i, branch) in stack.iter().enumerate().skip(1) {
@@ -82,7 +141,7 @@ impl SubmitCmd {
                 }
 
                 // Push the branch to the remote.
-                ctx.repository.push_branch(branch, "origin")?;
+                ctx.repository.push_branch(branch, "origin", self.force)?;
 
                 // Print success message.
                 println!("Updated branch `{}` on remote.", Color::Green.paint(branch));
@@ -90,13 +149,12 @@ impl SubmitCmd {
                 // If the PR has not been submitted yet.
 
                 // Push the branch to the remote.
-                ctx.repository.push_branch(branch, "origin")?;
+                ctx.repository.push_branch(branch, "origin", self.force)?;
 
                 // Prompt the user for PR metadata.
                 let metadata = Self::prompt_pr_metadata(branch, parent)?;
 
                 // Submit PR.
-                let pulls = gh_client.pulls(&owner, &repo);
                 let pr_info = pulls
                     .create(metadata.title, branch, parent)
                     .body(metadata.body)
@@ -120,38 +178,12 @@ impl SubmitCmd {
             }
         }
 
-        // Update the comments on the PRs.
-        Self::update_pr_comments(&mut ctx, gh_client.issues(owner, repo), &stack).await?;
-
-        println!("🧙💫 All pull requests up to date.");
         Ok(())
-    }
-
-    /// Prompts the user for metadata about the PR during the initial submission process.
-    fn prompt_pr_metadata(branch_name: &str, parent_name: &str) -> StResult<PRCreationMetadata> {
-        let title = inquire::Text::new(
-            format!(
-                "Title of pull request (`{}` -> `{}`):",
-                Color::Green.paint(branch_name),
-                Color::Yellow.paint(parent_name)
-            )
-            .as_str(),
-        )
-        .prompt()?;
-        let body = inquire::Editor::new("Pull request description")
-            .with_file_extension(".md")
-            .prompt()?;
-        let is_draft = inquire::Confirm::new("Is this PR a draft?").prompt()?;
-
-        Ok(PRCreationMetadata {
-            title,
-            body,
-            is_draft,
-        })
     }
 
     /// Updates the comments on a PR with the current stack information.
     async fn update_pr_comments(
+        &self,
         ctx: &mut StContext<'_>,
         issue_handler: IssueHandler<'_>,
         stack: &[String],
@@ -195,6 +227,29 @@ impl SubmitCmd {
             }
         }
         Ok(())
+    }
+
+    /// Prompts the user for metadata about the PR during the initial submission process.
+    fn prompt_pr_metadata(branch_name: &str, parent_name: &str) -> StResult<PRCreationMetadata> {
+        let title = inquire::Text::new(
+            format!(
+                "Title of pull request (`{}` -> `{}`):",
+                Color::Green.paint(branch_name),
+                Color::Yellow.paint(parent_name)
+            )
+            .as_str(),
+        )
+        .prompt()?;
+        let body = inquire::Editor::new("Pull request description")
+            .with_file_extension(".md")
+            .prompt()?;
+        let is_draft = inquire::Confirm::new("Is this PR a draft?").prompt()?;
+
+        Ok(PRCreationMetadata {
+            title,
+            body,
+            is_draft,
+        })
     }
 
     /// Renders the PR comment body for the current stack.

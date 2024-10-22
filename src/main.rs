@@ -3,7 +3,6 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 use clap::Parser;
-use errors::StResult;
 
 mod cli;
 mod config;
@@ -15,6 +14,9 @@ mod subcommands;
 mod tree;
 
 #[tokio::main]
-async fn main() -> StResult<()> {
-    cli::Cli::parse().run().await
+async fn main() {
+    if let Err(e) = cli::Cli::parse().run().await {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
 }

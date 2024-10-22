@@ -46,6 +46,19 @@ pub trait RepositoryExt {
     /// - `Result<()>` - The result of the operation.
     fn checkout_branch(&self, branch_name: &str) -> Result<(), git2::Error>;
 
+    /// Set the target of a branch to its upstream [git2::Reference].
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to set ref for.
+    ///
+    /// ## Returns
+    /// - `Result<()>` - The result of the operation.
+    fn set_target_to_upstream_ref(
+        &self,
+        branch_name: &str,
+        remote_name: &str,
+    ) -> Result<(), git2::Error>;
+
     /// Rebases a branch onto another branch.
     ///
     /// ## Takes
@@ -56,7 +69,29 @@ pub trait RepositoryExt {
     /// - `Result<()>` - The result of the operation.
     fn rebase_branch_onto(&self, branch_name: &str, onto: &str) -> Result<(), GitCommandError>;
 
+    /// Aborts a rebase in progress.
+    ///
+    /// ## Returns
+    /// - `Result<()>` - The result of the operation.
+    fn abort_rebase(&self) -> Result<(), GitCommandError>;
+
     /// Pushes a branch to a registered remote.
+    ///
+    /// ## Takes
+    /// - `branch_name` - The name of the branch to push.
+    /// - `remote_name` - The name of the remote to push to.
+    /// - `force` - Whether to force push.
+    ///
+    /// ## Returns
+    /// - `Result<()>` - The result of the operation.
+    fn push_branch(
+        &self,
+        branch_name: &str,
+        remote_name: &str,
+        force: bool,
+    ) -> Result<(), GitCommandError>;
+
+    /// Pulls a branch from a registered remote.
     ///
     /// ## Takes
     /// - `branch_name` - The name of the branch to push.
@@ -64,7 +99,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<()>` - The result of the operation.
-    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError>;
+    fn pull_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError>;
 
     /// Returns whether the local branch is ahead of the remote branch.
     ///
@@ -123,6 +158,27 @@ impl RepositoryExt for Repository {
         Ok(())
     }
 
+    fn set_target_to_upstream_ref(
+        &self,
+        branch_name: &str,
+        remote_name: &str,
+    ) -> Result<(), git2::Error> {
+        let mut branch = self.find_branch(branch_name, BranchType::Local)?;
+        let remote_ref = format!("refs/remotes/{}/{}", remote_name, branch_name);
+
+        let upstream_ref = self.find_reference(&remote_ref)?;
+        let upstream_ref_target = upstream_ref.target().ok_or(git2::Error::new(
+            ErrorCode::GenericError,
+            ErrorClass::Reference,
+            "Upstream ref target not found",
+        ))?;
+
+        branch
+            .get_mut()
+            .set_target(upstream_ref_target, "Set ref to upstream ref")?;
+        self.checkout_branch(branch_name)
+    }
+
     fn rebase_branch_onto(
         &self,
         branch_name: &str,
@@ -136,9 +192,27 @@ impl RepositoryExt for Repository {
         execute_git_command(&["rebase", onto_name], false)
     }
 
-    fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError> {
-        // TODO: Accept `force` parameter.
-        execute_git_command(&["push", remote_name, branch_name, "--force"], false)
+    fn abort_rebase(&self) -> Result<(), GitCommandError> {
+        execute_git_command(&["rebase", "--abort"], false)
+    }
+
+    fn push_branch(
+        &self,
+        branch_name: &str,
+        remote_name: &str,
+        force: bool,
+    ) -> Result<(), GitCommandError> {
+        let mut args = vec!["push", remote_name, branch_name];
+        if force {
+            args.push("--force");
+        }
+
+        execute_git_command(args.as_slice(), false)
+    }
+
+    fn pull_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError> {
+        self.checkout_branch(branch_name)?;
+        execute_git_command(&["pull", remote_name, branch_name], false)
     }
 
     fn ahead_and_behind_upstream(&self, branch_name: &str) -> Result<(usize, usize), git2::Error> {
@@ -163,7 +237,7 @@ impl RepositoryExt for Repository {
 #[derive(Error, Debug)]
 pub enum GitCommandError {
     /// An error occurred while executing a git command.
-    #[error("Error executing git command:\n{}", .0)]
+    #[error("git error:\n{}", .0)]
     Command(String),
     /// An IO error occurred.
     #[error("IO error: {}", .0)]

@@ -1,17 +1,53 @@
 //! Actions that can be dispatched by the user.
 
-use git2::BranchType;
-use nu_ansi_term::Color;
-use octocrab::{models::IssueState, pulls::PullRequestHandler};
-
+use super::StContext;
 use crate::{
     errors::{StError, StResult},
     git::RepositoryExt,
 };
-
-use super::StContext;
+use git2::BranchType;
+use nu_ansi_term::Color;
+use octocrab::{models::IssueState, pulls::PullRequestHandler};
 
 impl<'a> StContext<'a> {
+    /// Restacks the branch onto the parent branch passed.
+    ///
+    /// Returns `true` if the branch was restacked, `false` otherwise.
+    pub fn restack_branch(&mut self, branch_name: &str, parent_name: &str) -> StResult<()> {
+        // Skip branches that do not need to be restacked.
+        if !self.needs_restack(branch_name)? {
+            println!(
+                "Branch `{}` does not need to be restacked onto `{}`.",
+                Color::Green.paint(branch_name),
+                Color::Yellow.paint(parent_name)
+            );
+            return Ok(());
+        }
+
+        // Rebase the branch onto its parent.
+        self.repository
+            .rebase_branch_onto(branch_name, parent_name)?;
+
+        // Update the parent oid cache.
+        let parent_oid = self
+            .repository
+            .find_branch(parent_name, BranchType::Local)?
+            .get()
+            .target()
+            .ok_or(StError::MissingParentOidCache)?;
+        self.tree
+            .get_mut(branch_name)
+            .ok_or_else(|| StError::BranchNotTracked(branch_name.to_string()))?
+            .parent_oid_cache = Some(parent_oid.to_string());
+
+        println!(
+            "Restacked branch `{}` onto `{}`.",
+            Color::Green.paint(branch_name),
+            Color::Yellow.paint(parent_name)
+        );
+        Ok(())
+    }
+
     /// Checks if the current working tree is clean and the stack is restacked.
     pub fn check_cleanliness(&self, branches: &[String]) -> StResult<()> {
         // Return early if the stack is not restacked or the current working tree is dirty.
@@ -36,8 +72,9 @@ impl<'a> StContext<'a> {
         &mut self,
         branches: &[String],
         pulls: &mut PullRequestHandler<'_>,
-    ) -> StResult<()> {
-        for branch in branches.iter().skip(1) {
+    ) -> StResult<usize> {
+        let mut num_closed = 0;
+        for branch in branches.iter() {
             let tracked_branch = self
                 .tree
                 .get(branch)
@@ -47,12 +84,12 @@ impl<'a> StContext<'a> {
                 let remote_pr = pulls.get(remote_meta.pr_number).await?;
                 let pr_state = remote_pr.state.ok_or(StError::PullRequestNotFound)?;
 
-                if matches!(pr_state, IssueState::Closed) {
+                if matches!(pr_state, IssueState::Closed) || remote_pr.merged_at.is_some() {
                     let confirm = inquire::Confirm::new(
                         format!(
                             "Pull request for branch `{}` is {}. Would you like to delete the local branch?",
                             Color::Green.paint(branch),
-                            Color::Red.bold().paint("closed")
+                            Color::Purple.bold().paint("closed")
                         )
                         .as_str(),
                     )
@@ -61,11 +98,12 @@ impl<'a> StContext<'a> {
 
                     if confirm {
                         self.delete_branch(branch, true)?;
+                        num_closed += 1;
                     }
                 }
             }
         }
-        Ok(())
+        Ok(num_closed)
     }
 
     /// Asks the user for confirmation before deleting a branch.
