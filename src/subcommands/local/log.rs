@@ -1,7 +1,6 @@
 //! `log` subcommand.
 
-use crate::ctx::StContext;
-use anyhow::Result;
+use crate::{ctx::StContext, errors::StResult};
 use clap::Args;
 
 /// CLI arguments for the `log` subcommand.
@@ -10,7 +9,7 @@ pub struct LogCmd;
 
 impl LogCmd {
     /// Run the `log` subcommand.
-    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, ctx: StContext<'_>) -> StResult<()> {
         ctx.print_tree()?;
         Ok(())
     }

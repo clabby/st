@@ -6,7 +6,7 @@ use nu_ansi_term::Color;
 pub(crate) const GIT_DIR: &str = ".git";
 
 /// Name of the global config file.
-pub(crate) const ST_CFG_FILE_NAME: &str = "st.toml";
+pub(crate) const ST_CFG_FILE_NAME: &str = ".st.toml";
 
 /// Name of the store file, within `.git`.
 pub(crate) const ST_CTX_FILE_NAME: &str = ".st_store.toml";

@@ -73,7 +73,7 @@ pub trait RepositoryExt {
     ///
     /// ## Returns
     /// - `Result<bool>` - Whether the local branch is ahead of the remote branch.
-    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool, git2::Error>;
+    fn ahead_and_behind_upstream(&self, branch_name: &str) -> Result<(usize, usize), git2::Error>;
 }
 
 impl RepositoryExt for Repository {
@@ -120,7 +120,6 @@ impl RepositoryExt for Repository {
     fn checkout_branch(&self, branch_name: &str) -> Result<(), git2::Error> {
         self.set_head(format!("refs/heads/{}", branch_name).as_str())?;
         self.checkout_head(Some(CheckoutBuilder::new().force()))?;
-
         Ok(())
     }
 
@@ -132,14 +131,17 @@ impl RepositoryExt for Repository {
         // Check out the branch to rebase.
         self.checkout_branch(branch_name)?;
 
+        // Cheat and shell out to git to rebase the branch. This is mainly because git2 doesn't
+        // create rebase-todo files, etc., and it's easier to just shell out to git.
         execute_git_command(&["rebase", onto_name], false)
     }
 
     fn push_branch(&self, branch_name: &str, remote_name: &str) -> Result<(), GitCommandError> {
+        // TODO: Accept `force` parameter.
         execute_git_command(&["push", remote_name, branch_name, "--force"], false)
     }
 
-    fn is_ahead_of_remote(&self, branch_name: &str) -> Result<bool, git2::Error> {
+    fn ahead_and_behind_upstream(&self, branch_name: &str) -> Result<(usize, usize), git2::Error> {
         // Get the local branch
         let local_branch = self.find_branch(branch_name, BranchType::Local)?;
 
@@ -153,10 +155,7 @@ impl RepositoryExt for Repository {
         let upstream_commit = upstream.get().peel_to_commit()?;
 
         // Count ahead/behind commits
-        let (ahead, _behind) = self.graph_ahead_behind(local_commit.id(), upstream_commit.id())?;
-
-        // The branch is ahead if there are commits after the merge base
-        Ok(ahead > 0)
+        self.graph_ahead_behind(local_commit.id(), upstream_commit.id())
     }
 }
 

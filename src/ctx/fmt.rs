@@ -6,9 +6,9 @@ use crate::{
         BOTTOM_LEFT_BOX, COLORS, EMPTY_CIRCLE, FILLED_CIRCLE, HORIZONTAL_BOX, LEFT_FORK_BOX,
         VERTICAL_BOX,
     },
+    errors::{StError, StResult},
     git::RepositoryExt,
 };
-use anyhow::{anyhow, Result};
 use nu_ansi_term::Color;
 use std::fmt::{Display, Write};
 
@@ -16,7 +16,7 @@ impl<'a> StContext<'a> {
     /// Gathers an in-order list of [DisplayBranch]es, containing the log-line and branch name.
     ///
     /// This function is particularly useful when creating prompts with [inquire::Select].
-    pub fn display_branches(&self) -> Result<Vec<DisplayBranch>> {
+    pub fn display_branches(&self) -> StResult<Vec<DisplayBranch>> {
         // Collect the branches in the tree.
         let branches = self.tree.branches()?;
 
@@ -26,15 +26,6 @@ impl<'a> StContext<'a> {
 
         // Break up the buffer into lines, after trimming whitespace.
         let log_lines = buf.trim().lines().collect::<Vec<_>>();
-
-        // Pair the log-lines with the branches.
-        if branches.len() != log_lines.len() {
-            return Err(anyhow!(
-                "Mismatch between branches and log-lines: {} branches, {} log-lines",
-                branches.len(),
-                log_lines.len()
-            ));
-        }
 
         let display_branches = branches
             .into_iter()
@@ -48,7 +39,7 @@ impl<'a> StContext<'a> {
     }
 
     /// Prints the tree of branches contained within the [StContext].
-    pub fn print_tree(&self) -> Result<()> {
+    pub fn print_tree(&self) -> StResult<()> {
         let mut buf = String::new();
         self.write_tree(&mut buf)?;
         print!("{}", buf);
@@ -56,7 +47,7 @@ impl<'a> StContext<'a> {
     }
 
     /// Writes the tree of branches contained within the [StContext] to the given [Write]r.
-    pub fn write_tree<W: Write>(&self, w: &mut W) -> Result<()> {
+    pub fn write_tree<W: Write>(&self, w: &mut W) -> StResult<()> {
         let trunk_name = self.tree.trunk_name.as_str();
         self.write_tree_recursive(w, trunk_name, 0, "", "", true)
     }
@@ -70,13 +61,13 @@ impl<'a> StContext<'a> {
         prefix: &str,
         connection: &str,
         is_parent_last_child: bool,
-    ) -> Result<()> {
+    ) -> StResult<()> {
         // Grab the checked out branch.
         let checked_out = self.repository.current_branch_name()?;
         let current = self
             .tree
             .get(branch)
-            .ok_or(anyhow!("Branch {} not tracked with `st`.", branch))?;
+            .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?;
 
         // Form the log-line for the current branch.
         let checked_out_icon = (branch == checked_out)
@@ -93,7 +84,7 @@ impl<'a> StContext<'a> {
                 .remote
                 .map(|r| {
                     let (owner, repo) = self.owner_and_repository()?;
-                    Ok::<_, anyhow::Error>(Color::Cyan.italic().paint(format!(
+                    Ok::<_, StError>(Color::Cyan.italic().paint(format!(
                         "https://github.com/{}/{}/pull/{}",
                         owner, repo, r.pr_number
                     )))
@@ -165,4 +156,3 @@ impl Display for DisplayBranch {
         write!(f, "{}", self.display_value)
     }
 }
-

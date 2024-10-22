@@ -1,16 +1,15 @@
 //! `submit` subcommand.
 
-use crate::{actions::Action, ctx::StContext, git::RepositoryExt, tree::RemoteMetadata};
-use anyhow::{anyhow, Result};
+use crate::{
+    ctx::StContext,
+    errors::{StError, StResult},
+    git::RepositoryExt,
+    tree::RemoteMetadata,
+};
 use clap::Args;
 use git2::BranchType;
 use nu_ansi_term::Color;
-use octocrab::{
-    issues::IssueHandler,
-    models::{CommentId, IssueState},
-    Octocrab,
-};
-use std::env;
+use octocrab::{issues::IssueHandler, models::CommentId, Octocrab};
 
 /// CLI arguments for the `submit` subcommand.
 #[derive(Debug, Clone, Eq, PartialEq, Args)]
@@ -18,66 +17,22 @@ pub struct SubmitCmd;
 
 impl SubmitCmd {
     /// Run the `submit` subcommand.
-    pub async fn run(self, mut ctx: StContext<'_>) -> Result<()> {
+    pub async fn run(self, mut ctx: StContext<'_>) -> StResult<()> {
         // Establish the GitHub API client.
-        let token = env::var("GITHUB_TOKEN")
-            .map_err(|_| anyhow!("GITHUB_TOKEN environment variable must be set"))?
-            .to_string();
-        let gh_client = Octocrab::builder().personal_token(token.clone()).build()?;
+        let gh_client = Octocrab::builder()
+            .personal_token(ctx.cfg.github_token.clone())
+            .build()?;
         let (owner, repo) = ctx.owner_and_repository()?;
-        let pulls = gh_client.pulls(&owner, &repo);
+        let mut pulls = gh_client.pulls(&owner, &repo);
 
         // Resolve the active stack.
         let stack = ctx.discover_stack()?;
 
-        // Return early if the stack is not restacked or the working tree is dirty.
-        if stack
-            .iter()
-            .any(|branch| ctx.needs_restack(branch).unwrap_or_default())
-            || !ctx.repository.is_working_tree_clean()?
-        {
-            println!(
-                "Stack is {}. Please restack with `{}` before submitting.",
-                Color::Red.bold().paint("dirty"),
-                Color::Blue.paint("st restack")
-            );
-            return Ok(());
-        }
+        // Return early if the stack is not restacked or the current working tree is dirty.
+        ctx.check_cleanliness(&stack)?;
 
         // Check if any PRs have been closed, and offer to delete them before starting the submission process.
-        for branch in stack.iter().skip(1) {
-            let tracked_branch = ctx
-                .tree
-                .get(branch)
-                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
-
-            if let Some(remote_meta) = tracked_branch.remote.as_ref() {
-                let remote_pr = pulls.get(remote_meta.pr_number).await?;
-                let pr_state = remote_pr.state.ok_or(anyhow!("PR not found."))?;
-
-                if matches!(pr_state, IssueState::Closed) {
-                    let confirm = inquire::Confirm::new(
-                        format!(
-                            "Pull request for branch `{}` is {}. Would you like to delete the local branch?",
-                            Color::Green.paint(branch),
-                            Color::Red.bold().paint("closed")
-                        )
-                        .as_str(),
-                    )
-                    .with_default(false)
-                    .prompt()?;
-
-                    if confirm {
-                        Action::DeleteBranch {
-                            branch_name: branch,
-                            must_delete_from_tree: true,
-                        }
-                        .dispatch(&mut ctx)
-                        .await?;
-                    }
-                }
-            }
-        }
+        ctx.delete_closed_branches(&stack, &mut pulls).await?;
 
         // Iterate over the stack and submit PRs.
         for (i, branch) in stack.iter().enumerate().skip(1) {
@@ -86,7 +41,7 @@ impl SubmitCmd {
             let tracked_branch = ctx
                 .tree
                 .get_mut(branch)
-                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
+                .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?;
 
             if let Some(remote_meta) = tracked_branch.remote.as_ref() {
                 // If the PR has already been submitted.
@@ -116,7 +71,7 @@ impl SubmitCmd {
                         .find_branch(branch, BranchType::Local)?
                         .get()
                         .target()
-                        .ok_or(anyhow!("Failed to get target of local branch."))?
+                        .ok_or(StError::BranchUnavailable)?
                         .to_string();
                 if remote_synced {
                     println!(
@@ -173,7 +128,7 @@ impl SubmitCmd {
     }
 
     /// Prompts the user for metadata about the PR during the initial submission process.
-    fn prompt_pr_metadata(branch_name: &str, parent_name: &str) -> Result<PRCreationMetadata> {
+    fn prompt_pr_metadata(branch_name: &str, parent_name: &str) -> StResult<PRCreationMetadata> {
         let title = inquire::Text::new(
             format!(
                 "Title of pull request (`{}` -> `{}`):",
@@ -200,12 +155,12 @@ impl SubmitCmd {
         ctx: &mut StContext<'_>,
         issue_handler: IssueHandler<'_>,
         stack: &[String],
-    ) -> Result<()> {
+    ) -> StResult<()> {
         for branch in stack.iter().skip(1) {
             let tracked_branch = ctx
                 .tree
                 .get_mut(branch)
-                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
+                .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?;
 
             // Skip branches that are not submitted as PRs.
             let Some(remote_meta) = tracked_branch.remote else {
@@ -247,7 +202,7 @@ impl SubmitCmd {
         ctx: &StContext<'_>,
         current_branch: &str,
         stack: &[String],
-    ) -> Result<String> {
+    ) -> StResult<String> {
         let mut comment = String::new();
         comment.push_str("## 📚 $\\text{Stack Overview}$\n\n");
         comment.push_str("Pulls submitted in this stack:\n");
@@ -257,7 +212,7 @@ impl SubmitCmd {
             let tracked_branch = ctx
                 .tree
                 .get(branch)
-                .ok_or_else(|| anyhow!("Branch `{}` is not tracked with `st`.", branch))?;
+                .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?;
             if let Some(remote) = tracked_branch.remote {
                 comment.push_str(&format!(
                     "* #{}{}\n",

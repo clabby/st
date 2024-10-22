@@ -1,6 +1,6 @@
 //! The subcommands for the `st` application.
 
-use crate::ctx::StContext;
+use crate::{ctx::StContext, errors::StResult};
 use clap::Subcommand;
 
 mod local;
@@ -36,11 +36,11 @@ pub enum Subcommands {
 
 impl Subcommands {
     /// Run the subcommand with the given store.
-    pub async fn run(self, ctx: StContext<'_>) -> anyhow::Result<()> {
+    pub async fn run(self, ctx: StContext<'_>) -> StResult<()> {
         match self {
             // Local
             Self::Create(args) => args.run(ctx),
-            Self::Delete(args) => args.run(ctx).await,
+            Self::Delete(args) => args.run(ctx),
             Self::Log(args) => args.run(ctx),
             Self::Checkout(args) => args.run(ctx),
             Self::Restack(args) => args.run(ctx),

@@ -1,9 +1,7 @@
 //! `delete` subcommand.
 
-use crate::{actions::Action, ctx::StContext, git::RepositoryExt};
-use anyhow::{anyhow, bail, Result};
+use crate::{ctx::StContext, errors::StResult};
 use clap::Args;
-use git2::BranchType;
 use nu_ansi_term::Color;
 
 /// CLI arguments for the `delete` subcommand.
@@ -16,7 +14,7 @@ pub struct DeleteCmd {
 
 impl DeleteCmd {
     /// Run the `delete` subcommand.
-    pub async fn run(self, mut ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, mut ctx: StContext<'_>) -> StResult<()> {
         // Gather the display branches.
         let display_branches = ctx.display_branches()?;
 
@@ -31,13 +29,7 @@ impl DeleteCmd {
             }
         };
 
-        Action::DeleteBranch {
-            branch_name: &branch_name,
-            must_delete_from_tree: false,
-        }
-        .dispatch(&mut ctx)
-        .await?;
-
+        ctx.delete_branch(&branch_name, false)?;
         println!(
             "Successfully deleted branch `{}`.",
             Color::Blue.paint(&branch_name)

@@ -1,7 +1,11 @@
 //! The CLI for `st`.
 
-use crate::{ctx::StContext, subcommands::Subcommands};
-use anyhow::{anyhow, Result};
+use crate::{
+    config::{StConfig, DEFAULT_CONFIG_PRETTY},
+    ctx::StContext,
+    errors::{StError, StResult},
+    subcommands::Subcommands,
+};
 use clap::{
     builder::styling::{AnsiColor, Color, Style},
     ArgAction, Parser,
@@ -26,13 +30,36 @@ pub struct Cli {
 
 impl Cli {
     /// Run the CLI application with the given arguments.
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> StResult<()> {
         // Load the active repository.
-        let repo = crate::git::active_repository()
-            .ok_or_else(|| anyhow!("`st` only functions within a git repository."))?;
-        let context = Self::load_ctx_or_initialize(&repo)?;
+        let repo = crate::git::active_repository().ok_or(StError::NotAGitRepository)?;
+        let config = Self::load_cfg_or_initialize()?;
+        let context = Self::load_ctx_or_initialize(config, &repo)?;
 
         self.subcommand.run(context).await
+    }
+
+    /// Loads the [StConfig]. If the config does not exist, prompts the user to set up the
+    /// `st` for the first time.
+    ///
+    /// ## Returns
+    /// - `Result<StConfig>` - The global `st` config.
+    pub(crate) fn load_cfg_or_initialize() -> StResult<StConfig> {
+        // Load the global configuration for `st`, or initialize it if it doesn't exist.
+        match StConfig::try_load()? {
+            Some(config) => Ok(config),
+            None => {
+                let setup_message =
+                    format!("No global configuration found for `st`. Set up the environment.");
+
+                // Print the default config.
+                let ser_cfg = inquire::Editor::new(&setup_message)
+                    .with_file_extension(".toml")
+                    .with_predefined_text(&DEFAULT_CONFIG_PRETTY)
+                    .prompt()?;
+                Ok(toml::from_str(&ser_cfg)?)
+            }
+        }
     }
 
     /// Loads the [StContext] for the given [Repository]. If the context does not exist,
@@ -43,40 +70,41 @@ impl Cli {
     ///
     /// ## Returns
     /// - `Result<StContext>` - The context for the repository.
-    pub(crate) fn load_ctx_or_initialize<'a>(repo: &'a Repository) -> Result<StContext> {
+    pub(crate) fn load_ctx_or_initialize<'a>(
+        config: StConfig,
+        repo: &'a Repository,
+    ) -> StResult<StContext<'a>> {
         // Attempt to load the repository store, or create a new one if it doesn't exist.
-        let store = StContext::try_load(&repo)?;
-        match store {
-            Some(store) => Ok(store),
-            None => {
-                let setup_message = format!(
-                    "Repo not configured with `{}`. Select the trunk branch for the repository.",
-                    Blue.paint("st")
-                );
-
-                // Ask the user to specify the trunk branch of the repository.
-                // The trunk branch must be a local branch.
-                let branches = repo
-                    .branches(Some(BranchType::Local))?
-                    .into_iter()
-                    .map(|b| {
-                        let (b, _) = b?;
-                        b.name()?
-                            .map(ToOwned::to_owned)
-                            .ok_or(anyhow!("Branch name invalid."))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let trunk_branch = Select::new(&setup_message, branches).prompt()?;
-
-                // Print the welcome message.
-                println!(
-                    "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
-                    Blue.paint("st")
-                );
-
-                Ok(StContext::fresh(&repo, trunk_branch))
-            }
+        if let Some(ctx) = StContext::try_load(config.clone(), &repo)? {
+            return Ok(ctx);
         }
+
+        let setup_message = format!(
+            "Repo not configured with `{}`. Select the trunk branch for the repository.",
+            Blue.paint("st")
+        );
+
+        // Ask the user to specify the trunk branch of the repository.
+        // The trunk branch must be a local branch.
+        let branches = repo
+            .branches(Some(BranchType::Local))?
+            .into_iter()
+            .map(|b| {
+                let (b, _) = b?;
+                b.name()?
+                    .map(ToOwned::to_owned)
+                    .ok_or(StError::BranchUnavailable)
+            })
+            .collect::<StResult<Vec<_>>>()?;
+        let trunk_branch = Select::new(&setup_message, branches).prompt()?;
+
+        // Print the welcome message.
+        println!(
+            "\nSuccessfully set up repository with `{}`. Happy stacking ✨📚\n",
+            Blue.paint("st")
+        );
+
+        Ok(StContext::fresh(config, &repo, trunk_branch))
     }
 }
 

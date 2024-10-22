@@ -2,7 +2,7 @@
 name = "st"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license = "Beerware"
 authors = ["clabby"]
 repository = "https://github.com/clabby/st"
 homepage = "https://github.com/clabby/st"

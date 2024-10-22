@@ -1,7 +1,6 @@
 //! `create` subcommand.
 
-use crate::{ctx::StContext, git::RepositoryExt};
-use anyhow::Result;
+use crate::{ctx::StContext, errors::StResult, git::RepositoryExt};
 use clap::Args;
 use nu_ansi_term::Color;
 
@@ -14,7 +13,7 @@ pub struct CreateCmd {
 }
 impl CreateCmd {
     /// Run the `create` subcommand.
-    pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, mut ctx: StContext<'_>) -> StResult<()> {
         // Gather metadata about the current branch.
         let current_branch = ctx.repository.current_branch()?;
         let current_branch_head = current_branch.get().peel_to_commit()?;

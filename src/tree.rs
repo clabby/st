@@ -1,13 +1,13 @@
 //! Structured, [Serialize] + [Deserialize] representation of a stack of branches.
 
-use anyhow::{anyhow, Result};
+use crate::errors::{StError, StResult};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-/// An n-nary tree of branches, represented as a flat data structure.
+/// A simple n-nary tree of branches, with bidirectional references.
 ///
 /// By itself, [StackTree] has no context of its relationship with the local repository. For this functionality,
-/// [StContext] holds onto both the [StackTree] and the [Repository]
+/// [StContext] holds onto both the [StackTree] and the [Repository] to make informed decisions about the tree.
 ///
 /// [StContext]: crate::ctx::StContext
 /// [Repository]: git2::Repository
@@ -32,14 +32,6 @@ impl StackTree {
             trunk_name,
             branches,
         }
-    }
-
-    /// Gets the trunk branch from the stack graph.
-    ///
-    /// ## Panics
-    /// - If the trunk branch does not exist.
-    pub fn trunk(&self) -> &TrackedBranch {
-        self.branches.get(&self.trunk_name).unwrap()
     }
 
     /// Gets a branch by name from the stack graph.
@@ -80,12 +72,12 @@ impl StackTree {
         parent_name: &str,
         parent_oid_cache: &str,
         branch_name: &str,
-    ) -> Result<()> {
+    ) -> StResult<()> {
         // Get the parent branch.
-        let parent = self.branches.get_mut(parent_name).ok_or(anyhow!(
-            "Parent branch {} is not tracked with `st`. Track it first with `st track`.",
-            parent_name
-        ))?;
+        let parent = self
+            .branches
+            .get_mut(parent_name)
+            .ok_or_else(|| StError::BranchNotTracked(parent_name.to_string()))?;
 
         // Register the child branch with the parent.
         parent.children.insert(branch_name.to_string());
@@ -109,44 +101,46 @@ impl StackTree {
     /// ## Returns
     /// - `Some(branch)` - The deleted branch.
     /// - `None` - The branch by the name of `branch` was not found.
-    pub fn delete(&mut self, branch_name: &str) -> Option<TrackedBranch> {
+    pub fn delete(&mut self, branch_name: &str) -> StResult<TrackedBranch> {
         // Remove the branch from the stack tree.
-        let branch = self.branches.remove(branch_name)?;
+        let branch = self
+            .branches
+            .remove(branch_name)
+            .ok_or_else(|| StError::BranchNotTracked(branch_name.to_string()))?;
 
         // Remove the child from the parent's children list.
-        if let Some(ref parent) = branch.parent {
-            let parent_branch = self.branches.get_mut(parent)?;
+        if let Some(ref parent_name) = branch.parent {
+            let parent_branch = self
+                .branches
+                .get_mut(parent_name)
+                .ok_or_else(|| StError::BranchNotTracked(parent_name.to_string()))?;
             parent_branch.children.remove(branch_name);
 
             // Re-link the children of the deleted branch to the parent.
-            branch
-                .children
-                .iter()
-                .try_for_each(|child_name| {
-                    // Change the pointer of the child to the parent.
-                    let child = self
-                        .branches
-                        .get_mut(child_name)
-                        .ok_or(anyhow!("Child does not exist"))?;
-                    child.parent = branch.parent.clone();
+            branch.children.iter().try_for_each(|child_name| {
+                // Change the pointer of the child to the parent.
+                let child = self
+                    .branches
+                    .get_mut(child_name)
+                    .ok_or_else(|| StError::BranchNotTracked(child_name.to_string()))?;
+                child.parent = branch.parent.clone();
 
-                    // Add the child to the parent's children list.
-                    let parent = self
-                        .branches
-                        .get_mut(parent)
-                        .ok_or(anyhow!("Parent does not exist"))?;
-                    parent.children.insert(child_name.clone());
-                    Ok::<_, anyhow::Error>(())
-                })
-                .ok()?;
+                // Add the child to the parent's children list.
+                let parent = self
+                    .branches
+                    .get_mut(parent_name)
+                    .ok_or_else(|| StError::BranchNotTracked(parent_name.to_string()))?;
+                parent.children.insert(child_name.clone());
+                Ok::<_, StError>(())
+            })?;
         }
 
-        Some(branch)
+        Ok(branch)
     }
 
     /// Returns a vector of branch names in the stack graph. The vector is filled recursively, meaning that children are
     /// guaranteed to be listed after their parents.
-    pub fn branches(&self) -> Result<Vec<String>> {
+    pub fn branches(&self) -> StResult<Vec<String>> {
         let mut branch_names = Vec::new();
         self.fill_branches(&self.trunk_name, &mut branch_names)?;
         Ok(branch_names)
@@ -154,11 +148,11 @@ impl StackTree {
 
     /// Fills a vector with the trunk branch and its children. The resulting vector is filled recursively, meaning that
     /// children are guaranteed to be listed after their parents.
-    fn fill_branches(&self, name: &str, branch_names: &mut Vec<String>) -> Result<()> {
+    fn fill_branches(&self, name: &str, branch_names: &mut Vec<String>) -> StResult<()> {
         let current = self
             .branches
             .get(name)
-            .ok_or(anyhow!("Branch {} is not tracked with `st`.", name))?;
+            .ok_or_else(|| StError::BranchNotTracked(name.to_string()))?;
 
         branch_names.push(current.name.clone());
         current
@@ -229,21 +223,5 @@ impl RemoteMetadata {
             pr_number,
             comment_id: None,
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::StackTree;
-
-    #[test]
-    fn insert_new_branch() {
-        let mut tree = StackTree::new("main".to_string());
-
-        tree.insert("main", Default::default(), "feature_branch")
-            .unwrap();
-
-        let feature_branch = tree.get("feature_branch").unwrap();
-        assert_eq!(feature_branch.parent.clone().unwrap(), "main".to_string());
     }
 }

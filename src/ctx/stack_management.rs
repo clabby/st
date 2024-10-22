@@ -1,8 +1,10 @@
 //! Stack management functionality for [StContext].
 
 use super::StContext;
-use crate::git::RepositoryExt;
-use anyhow::{anyhow, Result};
+use crate::{
+    errors::{StError, StResult},
+    git::RepositoryExt,
+};
 use git2::BranchType;
 use nu_ansi_term::Color;
 use std::collections::VecDeque;
@@ -11,15 +13,15 @@ impl<'a> StContext<'a> {
     /// Discovers the current stack, relative to the checked out branch, including the trunk branch.
     ///
     /// The returned stack is ordered from the trunk branch to the tip of the stack.
-    pub fn discover_stack(&self) -> Result<Vec<String>> {
+    pub fn discover_stack(&self) -> StResult<Vec<String>> {
         let mut stack = VecDeque::new();
 
         // Get the current branch name.
         let current_branch = self.repository.current_branch_name()?;
-        let current_tracked_branch = self.tree.get(&current_branch).ok_or(anyhow!(
-            "Branch {} is not tracked with `st`.",
-            current_branch
-        ))?;
+        let current_tracked_branch = self
+            .tree
+            .get(&current_branch)
+            .ok_or_else(|| StError::BranchNotTracked(current_branch.to_string()))?;
 
         // Resolve upstack.
         let mut upstack = current_tracked_branch.parent.as_ref();
@@ -28,7 +30,7 @@ impl<'a> StContext<'a> {
             upstack = self
                 .tree
                 .get(parent)
-                .ok_or(anyhow!("Parent branch not found"))?
+                .ok_or_else(|| StError::BranchNotTracked(parent.to_string()))?
                 .parent
                 .as_ref();
         }
@@ -57,11 +59,11 @@ impl<'a> StContext<'a> {
     }
 
     /// Returns whether or not a given branch needs to be restacked onto its parent.
-    pub fn needs_restack(&self, branch_name: &str) -> Result<bool> {
+    pub fn needs_restack(&self, branch_name: &str) -> StResult<bool> {
         let branch = self
             .tree
             .get(branch_name)
-            .ok_or(anyhow!("Branch {} is not tracked with `st`.", branch_name))?;
+            .ok_or_else(|| StError::BranchNotTracked(branch_name.to_string()))?;
 
         // If the branch does not have a parent, then it is trunk and never needs to be restacked.
         let Some(ref parent_name) = branch.parent else {
@@ -73,14 +75,11 @@ impl<'a> StContext<'a> {
             .find_branch(parent_name.as_str(), BranchType::Local)?
             .get()
             .target()
-            .ok_or(anyhow!(
-                "Parent branch {} does not have a commit.",
-                parent_name
-            ))?;
-        let parent_oid_cache = branch.parent_oid_cache.as_ref().ok_or(anyhow!(
-            "Parent branch {} does not have a cached commit.",
-            parent_name
-        ))?;
+            .ok_or(StError::BranchUnavailable)?;
+        let parent_oid_cache = branch
+            .parent_oid_cache
+            .as_ref()
+            .ok_or(StError::MissingParentOidCache)?;
 
         // If the parent oid cache is invalid, or the parent needs to be restacked, then the branch
         // needs to be restacked.
@@ -88,7 +87,7 @@ impl<'a> StContext<'a> {
     }
 
     /// Performs a restack of the active stack.
-    pub fn restack(&mut self) -> Result<()> {
+    pub fn restack(&mut self) -> StResult<()> {
         // Discover the current stack.
         let stack = self.discover_stack()?;
 
@@ -113,13 +112,10 @@ impl<'a> StContext<'a> {
                 .find_branch(&stack[i - 1], BranchType::Local)?
                 .get()
                 .target()
-                .ok_or(anyhow!(
-                    "Parent branch {} does not have a commit.",
-                    &stack[i - 1]
-                ))?;
+                .ok_or(StError::MissingParentOidCache)?;
             self.tree
                 .get_mut(branch)
-                .ok_or(anyhow!("Branch {} is not tracked with `st`.", branch))?
+                .ok_or_else(|| StError::BranchNotTracked(branch.to_string()))?
                 .parent_oid_cache = Some(parent_oid.to_string());
 
             println!(

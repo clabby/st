@@ -1,7 +1,10 @@
 //! `checkout` subcommand.
 
-use crate::{ctx::StContext, git::RepositoryExt};
-use anyhow::Result;
+use crate::{
+    ctx::StContext,
+    errors::{StError, StResult},
+    git::RepositoryExt,
+};
 use clap::Args;
 
 /// CLI arguments for the `checkout` subcommand.
@@ -14,7 +17,7 @@ pub struct CheckoutCmd {
 
 impl CheckoutCmd {
     /// Run the `checkout` subcommand.
-    pub fn run(self, ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, ctx: StContext<'_>) -> StResult<()> {
         let branches = ctx.display_branches()?;
 
         // Prompt the user for the name of the branch to checkout, or use the provided name.
@@ -30,10 +33,7 @@ impl CheckoutCmd {
 
         // Ensure the provided branch is tracked with `st`.
         if !ctx.tree.get(&branch_name).is_some() {
-            anyhow::bail!(
-                "Branch `{}` is not tracked with `st`. Track it first with `st track`.",
-                branch_name
-            );
+            return Err(StError::BranchNotTracked(branch_name));
         }
 
         ctx.repository

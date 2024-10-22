@@ -1,7 +1,10 @@
 //! `track` subcommand.
 
-use crate::{ctx::StContext, git::RepositoryExt};
-use anyhow::Result;
+use crate::{
+    ctx::StContext,
+    errors::{StError, StResult},
+    git::RepositoryExt,
+};
 use clap::Args;
 use nu_ansi_term::Color;
 
@@ -11,17 +14,14 @@ pub struct TrackCmd;
 
 impl TrackCmd {
     /// Run the `track` subcommand.
-    pub fn run(self, mut ctx: StContext<'_>) -> Result<()> {
+    pub fn run(self, mut ctx: StContext<'_>) -> StResult<()> {
         // Gather metadata about the current branch.
         let current_branch = ctx.repository.current_branch()?;
         let current_branch_name = ctx.repository.current_branch_name()?;
 
         // Ensure the current branch is not already tracked.
         if ctx.tree.get(&current_branch_name).is_some() {
-            anyhow::bail!(
-                "Branch `{}` is already tracked with `st`.",
-                current_branch_name
-            );
+            return Err(StError::BranchAlreadyTracked(current_branch_name));
         }
 
         // Prompt the user for the parent branch of the current branch.
@@ -46,8 +46,8 @@ impl TrackCmd {
 
         println!(
             "Tracked branch `{}` on top of `{}`",
-            Color::Blue.paint(&current_branch_name),
-            Color::Blue.paint(&parent_branch_name.branch_name)
+            Color::Green.paint(&current_branch_name),
+            Color::Yellow.paint(&parent_branch_name.branch_name)
         );
         Ok(())
     }
