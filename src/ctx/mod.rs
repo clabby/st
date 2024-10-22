@@ -4,9 +4,11 @@ use crate::{
     config::StConfig,
     constants::{GIT_DIR, ST_CTX_FILE_NAME},
     errors::{StError, StResult},
+    git::RepositoryExt,
     tree::StackTree,
 };
 use git2::{BranchType, Repository};
+use octocrab::Octocrab;
 use std::path::PathBuf;
 
 mod actions;
@@ -45,6 +47,42 @@ impl<'a> StContext<'a> {
             repository,
             tree: StackTree::new(trunk),
         }
+    }
+
+    /// Returns if the current branch has an open PR.
+    /// Returns the branch name and it's parent branch name.
+    pub async fn get_open_pr(&self, client: &Octocrab) -> StResult<Option<(String, String)>> {
+        let (owner, repo) = self.owner_and_repository()?;
+        let page = client
+            .pulls(&owner, &repo)
+            .list()
+            .state(octocrab::params::State::Open)
+            .sort(octocrab::params::pulls::Sort::Popularity)
+            .direction(octocrab::params::Direction::Ascending)
+            .per_page(255)
+            .send()
+            .await?;
+        let mut found = false;
+        let current_branch = self.repository.current_branch_name()?;
+        for item in page.items.iter() {
+            if item.head.ref_field == current_branch {
+                found = true;
+                break;
+            }
+        }
+        if found {
+            let current_tracked_branch = self
+                .tree
+                .get(&current_branch)
+                .ok_or_else(|| StError::BranchNotTracked(current_branch.to_string()))?;
+            let upstack = current_tracked_branch.parent.as_ref();
+            return Ok(Some((
+                current_branch,
+                upstack.map(|s| s.as_ref()).unwrap_or("unknown").to_string(),
+            )));
+        }
+
+        Ok(None)
     }
 
     /// Loads the [StackTree] for the given [Repository], and assembles a [StContext].

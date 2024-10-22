@@ -34,7 +34,8 @@ impl SubmitCmd {
 
         // Perform pre-flight checks.
         println!("🔍 Checking for closed pull requests...");
-        self.pre_flight(&mut ctx, &stack, &mut pulls).await?;
+        self.pre_flight(&gh_client, &mut ctx, &stack, &mut pulls)
+            .await?;
 
         // Submit the stack.
         println!(
@@ -56,12 +57,18 @@ impl SubmitCmd {
     /// Performs pre-flight checks before submitting the stack.
     async fn pre_flight(
         &self,
+        gh_client: &Octocrab,
         ctx: &mut StContext<'_>,
         stack: &[String],
         pulls: &mut PullRequestHandler<'_>,
     ) -> StResult<()> {
         // Return early if the stack is not restacked or the current working tree is dirty.
         ctx.check_cleanliness(stack)?;
+
+        // Check if the current branch has an open PR.
+        if let Some((c, p)) = ctx.get_open_pr(gh_client).await? {
+            return Err(StError::PullRequestAlreadyOpen(c, p));
+        }
 
         // Check if any PRs have been closed, and offer to delete them before starting the submission process.
         let num_closed = ctx

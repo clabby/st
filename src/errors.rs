@@ -43,6 +43,9 @@ pub enum StError {
     /// A remote pull request could not be found.
     #[error("Remote pull request not found.")]
     PullRequestNotFound,
+    /// A pull request is already open.
+    #[error("Pull request is already open for branch {} with parent `{}`.", Color::Blue.paint(.0), Color::Blue.paint(.1))]
+    PullRequestAlreadyOpen(String, String),
 
     // ---- [ Git Errors ] ----
     /// `st` mused be run within a git repository.
