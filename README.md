@@ -3,7 +3,10 @@
 </h1>
 
 <h4 align="center">
-   Yet another tool for managing stacked PRs locally and on GitHub, built on [`libgit2`](https://crates.io/crates/git2) and [`octocrab`](https://crates.io/crates/octocrab).
+   Yet another tool for managing stacked PRs locally and on GitHub, built on 
+   <a href="https://crates.io/crates/git2"><code>libgit2</code></a> 
+   and 
+   <a href="https://crates.io/crates/octocrab"><code>octocrab</code></a>.
 </h4>
 
 <p align="center">
