@@ -3,9 +3,9 @@
 </h1>
 
 <h4 align="center">
-   Yet another tool for managing stacked PRs locally and on GitHub, built on 
-   <a href="https://crates.io/crates/git2"><code>libgit2</code></a> 
-   and 
+   Yet another tool for managing stacked PRs locally and on GitHub, built on
+   <a href="https://crates.io/crates/git2"><code>libgit2</code></a>
+   and
    <a href="https://crates.io/crates/octocrab"><code>octocrab</code></a>.
 </h4>
 
@@ -71,7 +71,7 @@ Very close to what I want, but:
    features that I enjoy.
 2. Doesn't have ergonomic aliases.
 3. Doesn't support the comments on GitHub PRs that direct reviewers around the stack.
-4. Similar to `graphite`, painfully slow. It's written in TypeScript, plus shells out to `git` constantly, making even
+4. Similar to `graphite`, painfully slow. It's written in TypeScript and pings its API quite a bit, making even
    operations like `gt ls` take > 500ms. I like my CLI tools snappy!
 
 ![gt_ls_bench](./assets/gt_ls_bench.png)
