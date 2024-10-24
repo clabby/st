@@ -7,8 +7,6 @@ use crate::{
     errors::{StError, StResult},
 };
 use clap::Args;
-use cli_table::{Cell, Style, Table};
-use octocrab::{models::IssueState, Octocrab};
 use std::path::PathBuf;
 
 /// CLI arguments for the `config` subcommand.
