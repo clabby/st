@@ -11,6 +11,8 @@ pub(crate) const DEFAULT_CONFIG_PRETTY: &str = r#"# GitHub personal access token
 # Must have the following scopes:
 # - repo:status
 # - repo:public_repo
+#
+# If you're planning to use st with private repositories, you'll need to add the full `repo` scope.
 github_token = """#;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
