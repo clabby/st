@@ -83,6 +83,9 @@ pub enum StError {
     /// A [std::fmt::Write] error occurred.
     #[error("🖋️ write error: {}", .0)]
     WriteError(#[from] std::fmt::Error),
+    /// A [toml::ser::Error] occurred.
+    #[error("🍅 toml decoding error: {}", .0)]
+    TomlSerializationError(#[from] toml::ser::Error),
     /// A [toml::de::Error] occurred.
     #[error("🍅 toml decoding error: {}", .0)]
     TomlDecodingError(#[from] toml::de::Error),
