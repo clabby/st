@@ -34,6 +34,9 @@ impl Cli {
         // Load the active repository.
         let repo = crate::git::active_repository().ok_or(StError::NotAGitRepository)?;
         let config = Self::load_cfg_or_initialize()?;
+        if config == StConfig::default() {
+            println!("Warning: Configuration is not initialized.");
+        }
         let context = Self::load_ctx_or_initialize(config, &repo)?;
 
         self.subcommand.run(context).await
@@ -48,20 +51,42 @@ impl Cli {
         // Load the global configuration for `st`, or initialize it if it doesn't exist.
         match StConfig::try_load()? {
             Some(config) => Ok(config),
-            None => {
-                let setup_message = format!(
-                    "No global configuration found for `{}`. Set up the environment.",
-                    Blue.paint("st")
-                );
-
-                // Print the default config.
-                let ser_cfg = inquire::Editor::new(&setup_message)
-                    .with_file_extension(".toml")
-                    .with_predefined_text(DEFAULT_CONFIG_PRETTY)
-                    .prompt()?;
-                Ok(toml::from_str(&ser_cfg)?)
-            }
+            None => Self::prompt_for_configuration(""),
         }
+    }
+
+    /// Prompts the user to set up the global configuration for `st`.
+    ///
+    /// ## Returns
+    /// - `Result<StConfig>` - The newly created global `st` config.
+    pub fn prompt_for_configuration(existing_config: &str) -> StResult<StConfig> {
+        let setup_text = if existing_config.is_empty() {
+            format!(
+                "No configuration found for `{}`. Set up the environment.",
+                Blue.paint("st")
+            )
+        } else {
+            format!(
+                "Existing configuration found for `{}`. Set up the environment.",
+                Blue.paint("st")
+            )
+        };
+
+        // Use the provided predefined text or fall back to the default.
+        let text_to_use = if existing_config.is_empty() {
+            DEFAULT_CONFIG_PRETTY
+        } else {
+            existing_config
+        };
+
+        // Print the default config.
+        let ser_cfg = inquire::Editor::new(&setup_text)
+            .with_file_extension(".toml")
+            .with_predefined_text(text_to_use)
+            .prompt()?;
+        let config: StConfig = toml::from_str(&ser_cfg)?;
+        config.save()?;
+        Ok(config)
     }
 
     /// Loads the [StContext] for the given [Repository]. If the context does not exist,

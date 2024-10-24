@@ -1,35 +1,29 @@
-//! `status` subcommand.
+//! `config` subcommand.
 
-use crate::constants::ST_CFG_FILE_NAME;
-use crate::{
-    cli::Cli, // Import the Cli struct to access the function
-    ctx::StContext,
-    errors::{StError, StResult},
-};
-use clap::Args;
-use std::path::PathBuf;
+use crate::{cli::Cli, config::StConfig, ctx::StContext, errors::StResult};
+use inquire::Confirm;
 
-/// CLI arguments for the `config` subcommand.
-#[derive(Debug, Clone, Eq, PartialEq, Args)]
+#[derive(Debug, Clone, Eq, PartialEq, clap::Args)]
 pub struct ConfigCmd;
 
 impl ConfigCmd {
-    /// Run the `config` subcommand.
+    /// Run the `config` subcommand to force or allow configuration editing.
     pub fn run(self, _ctx: StContext<'_>) -> StResult<()> {
         let config = Cli::load_cfg_or_initialize()?;
-        let config_path = PathBuf::from(env!("HOME")).join(ST_CFG_FILE_NAME);
-
-        if config.github_token.is_empty() {
-            return Err(StError::ConfigNotInitialized(
-                config_path.display().to_string(),
-            ));
+        if config == StConfig::default() || config.github_token.is_empty() {
+            println!("Configuration is not initialized. Please configure it now.");
+            Cli::prompt_for_configuration("")?;
         } else {
-            println!(
-                "Configuration successfully initialized at: {:?}",
-                config_path
-            );
+            let parsed_config = toml::to_string_pretty(&config).unwrap();
+            println!("Current configuration:\n\n{}", parsed_config);
+            if Confirm::new("Do you want to edit the configuration? (default: no)")
+                .with_default(false)
+                .prompt()?
+            {
+                Cli::prompt_for_configuration(&parsed_config)?;
+                println!("Configuration updated.");
+            }
         }
-
         Ok(())
     }
 }

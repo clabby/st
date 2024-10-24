@@ -38,9 +38,6 @@ pub enum StError {
     /// A generic decoding error occurred.
     #[error("Decoding error: {}", .0)]
     DecodingError(String),
-    /// The configuration is not correctly initialized.
-    #[error("Configuration not initialized. Please edit configuration at: {}", .0)]
-    ConfigNotInitialized(String),
 
     // ---- [ `st` application errors (remote) ] ----
     /// A remote pull request could not be found.

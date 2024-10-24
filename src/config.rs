@@ -36,12 +36,10 @@ impl StConfig {
             Err(_) => Ok(None),
         }
     }
-}
 
-impl Drop for StConfig {
-    fn drop(&mut self) {
+    pub fn save(&self) -> Result<(), io::Error> {
         let config_path = PathBuf::from(env!("HOME")).join(ST_CFG_FILE_NAME);
-        fs::write(&config_path, toml::to_string(self).unwrap()).unwrap();
+        fs::write(&config_path, toml::to_string(self).unwrap())
     }
 }
 
