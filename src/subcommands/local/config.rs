@@ -26,7 +26,10 @@ impl ConfigCmd {
                 config_path.display().to_string(),
             ));
         } else {
-            println!("Configuration successfully initialized at: {:?}", config_path);
+            println!(
+                "Configuration successfully initialized at: {:?}",
+                config_path
+            );
         }
 
         Ok(())
