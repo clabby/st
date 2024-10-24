@@ -37,7 +37,7 @@ You can install `st` with:
 ```sh
 git clone https://github.com/clabby/st && \
    cd st && \
-   cargo install --bin st --force
+   cargo install --bin st --path . --force
 ```
 
 ## What are Stacked PRs?
