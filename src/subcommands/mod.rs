@@ -4,7 +4,9 @@ use crate::{ctx::StContext, errors::StResult};
 use clap::Subcommand;
 
 mod local;
-use local::{CheckoutCmd, CreateCmd, DeleteCmd, LogCmd, RestackCmd, TrackCmd, UntrackCmd};
+use local::{
+    CheckoutCmd, ConfigCmd, CreateCmd, DeleteCmd, LogCmd, RestackCmd, TrackCmd, UntrackCmd,
+};
 
 mod remote;
 use remote::{StatusCmd, SubmitCmd, SyncCmd};
@@ -41,6 +43,9 @@ pub enum Subcommands {
     /// Untrack the passed branch.
     #[clap(visible_alias = "ut")]
     Untrack(UntrackCmd),
+    /// Configure the st application.
+    #[clap(visible_alias = "cfg")]
+    Config(ConfigCmd),
 }
 
 impl Subcommands {
@@ -59,6 +64,7 @@ impl Subcommands {
             Self::Log(args) => args.run(ctx),
             Self::Track(args) => args.run(ctx),
             Self::Untrack(args) => args.run(ctx),
+            Self::Config(args) => args.run(ctx),
         }
     }
 }

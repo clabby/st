@@ -20,3 +20,6 @@ pub use track::TrackCmd;
 
 mod untrack;
 pub use untrack::UntrackCmd;
+
+mod config;
+pub use config::ConfigCmd;
