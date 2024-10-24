@@ -59,9 +59,10 @@ Commands:
   delete    Delete a branch that is tracked with `st` [aliases: d, del]
   restack   Restack the the current stack [aliases: r, sr]
   log       Print a tree of all tracked stacks [aliases: l, ls]
-  status    Print a table of the status of the current stack [aliases: st, stat]
+  status    Show the status of the current stack on GitHub [aliases: st, stat]
   track     Track the current branch on top of a tracked stack node [aliases: tr]
   untrack   Untrack the passed branch [aliases: ut]
+  config    Configure the st application [aliases: cfg]
   help      Print this message or the help of the given subcommand(s)
 
 Options:
