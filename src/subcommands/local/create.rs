@@ -25,6 +25,11 @@ impl CreateCmd {
             None => inquire::Text::new("Name of new branch:").prompt()?,
         };
 
+        // Check if the working tree is clean.
+        if !ctx.repository.is_working_tree_clean()? {
+            return Err(crate::errors::StError::WorkingTreeDirty);
+        }
+
         // Attempt to create the new branch.
         ctx.repository
             .branch(&new_branch_name, &current_branch_head, false)?;
