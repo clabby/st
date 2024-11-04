@@ -9,7 +9,7 @@ use git2::BranchType;
 use nu_ansi_term::Color;
 use octocrab::{models::IssueState, pulls::PullRequestHandler};
 
-impl<'a> StContext<'a> {
+impl StContext<'_> {
     /// Restacks the branch onto the parent branch passed.
     ///
     /// Returns `true` if the branch was restacked, `false` otherwise.
