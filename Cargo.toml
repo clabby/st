@@ -12,7 +12,7 @@ publish = false
 # Core
 tokio = { version = "1.39", features = ["full"] }
 git2 = "0.19"
-octocrab = "0.41"
+octocrab = "0.41.2"
 thiserror = "1.0"
 
 # CLI
