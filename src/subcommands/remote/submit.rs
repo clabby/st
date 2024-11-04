@@ -165,14 +165,12 @@ impl SubmitCmd {
                     .await?;
 
                 // Update labels and assignees, if declared.
-                if metadata.labels.is_some() || metadata.assignees.is_some() {
-                    if let Some(ref labels) = metadata.labels {
-                        issues.add_labels(pr_info.number, labels).await?;
-                    }
-                    if let Some(ref assignees) = metadata.assignees {
-                        let assignees = assignees.iter().map(AsRef::as_ref).collect::<Vec<_>>();
-                        issues.add_assignees(pr_info.number, &assignees).await?;
-                    }
+                if let Some(ref labels) = metadata.labels {
+                    issues.add_labels(pr_info.number, labels).await?;
+                }
+                if let Some(ref assignees) = metadata.assignees {
+                    let assignees = assignees.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+                    issues.add_assignees(pr_info.number, &assignees).await?;
                 }
 
                 // Update the tracked branch with the remote information.
