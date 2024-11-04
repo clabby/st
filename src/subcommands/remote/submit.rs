@@ -10,6 +10,7 @@ use clap::Args;
 use git2::BranchType;
 use nu_ansi_term::Color;
 use octocrab::{issues::IssueHandler, models::CommentId, pulls::PullRequestHandler, Octocrab};
+use std::fmt::Display;
 
 /// CLI arguments for the `submit` subcommand.
 #[derive(Debug, Clone, Eq, PartialEq, Args)]
@@ -28,6 +29,7 @@ impl SubmitCmd {
             .build()?;
         let (owner, repo) = ctx.owner_and_repository()?;
         let mut pulls = gh_client.pulls(&owner, &repo);
+        let mut issues = gh_client.issues(&owner, &repo);
 
         // Resolve the active stack.
         let stack = ctx.discover_stack()?;
@@ -41,13 +43,12 @@ impl SubmitCmd {
             "\n🐙 Submitting changes to remote `{}`...",
             Color::Blue.paint("origin")
         );
-        self.submit_stack(&mut ctx, &mut pulls, &owner, &repo)
+        self.submit_stack(&mut ctx, &mut pulls, &mut issues, &owner, &repo)
             .await?;
 
         // Update the stack navigation comments on the PRs.
         println!("\n📝 Updating stack navigation comments...");
-        self.update_pr_comments(&mut ctx, gh_client.issues(owner, repo), &stack)
-            .await?;
+        self.update_pr_comments(&mut ctx, issues, &stack).await?;
 
         println!("\n🧙💫 All pull requests up to date.");
         Ok(())
@@ -88,6 +89,7 @@ impl SubmitCmd {
         &self,
         ctx: &mut StContext<'_>,
         pulls: &mut PullRequestHandler<'_>,
+        issues: &mut IssueHandler<'_>,
         owner: &str,
         repo: &str,
     ) -> StResult<()> {
@@ -152,7 +154,7 @@ impl SubmitCmd {
                 ctx.repository.push_branch(branch, "origin", self.force)?;
 
                 // Prompt the user for PR metadata.
-                let metadata = Self::prompt_pr_metadata(branch, parent)?;
+                let metadata = Self::prompt_pr_metadata(branch, parent, issues).await?;
 
                 // Submit PR.
                 let pr_info = pulls
@@ -161,6 +163,17 @@ impl SubmitCmd {
                     .draft(metadata.is_draft)
                     .send()
                     .await?;
+
+                // Update labels and assignees, if declared.
+                if metadata.labels.is_some() || metadata.assignees.is_some() {
+                    if let Some(ref labels) = metadata.labels {
+                        issues.add_labels(pr_info.number, labels).await?;
+                    }
+                    if let Some(ref assignees) = metadata.assignees {
+                        let assignees = assignees.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+                        issues.add_assignees(pr_info.number, &assignees).await?;
+                    }
+                }
 
                 // Update the tracked branch with the remote information.
                 tracked_branch.remote = Some(RemoteMetadata::new(pr_info.number));
@@ -230,7 +243,11 @@ impl SubmitCmd {
     }
 
     /// Prompts the user for metadata about the PR during the initial submission process.
-    fn prompt_pr_metadata(branch_name: &str, parent_name: &str) -> StResult<PRCreationMetadata> {
+    async fn prompt_pr_metadata(
+        branch_name: &str,
+        parent_name: &str,
+        issues: &mut IssueHandler<'_>,
+    ) -> StResult<PRCreationMetadata> {
         let title = inquire::Text::new(
             format!(
                 "Title of pull request (`{}` -> `{}`):",
@@ -247,10 +264,66 @@ impl SubmitCmd {
             .with_default(true)
             .prompt()?;
 
+        let set_labels =
+            inquire::Confirm::new("Would you like to set labels for the pull request?")
+                .with_default(false)
+                .prompt()?;
+        let labels = if set_labels {
+            let labels = issues.list_labels_for_repo().send().await?.take_items();
+            let display_labels = labels
+                .iter()
+                .map(|label| {
+                    let color_hex = u32::from_str_radix(&label.color, 16).map_err(|_| {
+                        StError::DecodingError("Failed to decode label color".to_string())
+                    })?;
+                    let (r, g, b) = (
+                        (color_hex >> 16 & 0xff) as u8,
+                        (color_hex >> 8 & 0xff) as u8,
+                        (color_hex & 0xff) as u8,
+                    );
+                    let color = Color::Rgb(r, g, b);
+                    Ok(SelectLabel {
+                        name: label.name.clone(),
+                        formatted: color.paint(label.name.as_str()).to_string(),
+                    })
+                })
+                .collect::<StResult<Vec<_>>>()?;
+
+            let selected_labels =
+                inquire::MultiSelect::new("Select labels for the pull request:", display_labels)
+                    .prompt()?;
+
+            Some(
+                selected_labels
+                    .into_iter()
+                    .map(|label| label.name)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        let set_assignee = inquire::Confirm::new("Would you like to assign the pull request?")
+            .with_default(false)
+            .prompt()?;
+        let assignees = set_assignee
+            .then(|| {
+                let answer = inquire::Text::new("Assignees (comma-separated):")
+                    .prompt()?
+                    .replace(' ', "")
+                    .split(',')
+                    .map(ToString::to_string)
+                    .collect();
+                Ok::<_, StError>(answer)
+            })
+            .transpose()?;
+
         Ok(PRCreationMetadata {
             title,
             body,
             is_draft,
+            labels,
+            assignees,
         })
     }
 
@@ -290,6 +363,7 @@ impl SubmitCmd {
 }
 
 /// Metadata about pull request creation.
+#[derive(Debug)]
 struct PRCreationMetadata {
     /// Title of the pull request.
     title: String,
@@ -297,4 +371,23 @@ struct PRCreationMetadata {
     body: String,
     /// Whether or not the pull request is a draft.
     is_draft: bool,
+    /// Labels to apply to the pull request.
+    labels: Option<Vec<String>>,
+    /// Assignees for the pull request.
+    assignees: Option<Vec<String>>,
+}
+
+/// A colored label for display in the terminal.
+#[derive(Debug)]
+struct SelectLabel {
+    /// The raw name of the label.
+    name: String,
+    /// The formatted name of the label.
+    formatted: String,
+}
+
+impl Display for SelectLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.formatted)
+    }
 }
